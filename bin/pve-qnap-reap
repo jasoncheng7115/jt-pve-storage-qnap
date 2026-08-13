@@ -1,0 +1,130 @@
+#!/usr/bin/perl
+
+# Clean up multipath maps this node holds for LUNs the NAS no longer has.
+#
+# WHY THIS IS A SEPARATE TOOL AND NOT SOMETHING PROXMOX VE DOES.
+#
+# PVE calls `deactivate_volume` on the source node only when it copied a LOCAL
+# volume — `QemuMigrate`'s single `deactivate_volumes` call is inside
+# `sync_offline_local_volumes` — so for a SHARED storage the source node is
+# never told. A VM live-migrated pve1 -> pve2 -> pve3 and then destroyed on pve3
+# leaves pve1 and pve2 each holding a multipath map and a tracking entry for a
+# LUN that has ceased to exist. One per LUN, per node that ever saw it.
+#
+# `deactivate_storage` would do this, and NOTHING IN PROXMOX VE CALLS IT — that
+# was verified across the whole /usr/share/perl5/PVE tree. So this is the path.
+#
+# Run it on the node that has the leftovers. It reports by default and only acts
+# with --remove.
+#
+# It refuses on doubt, always. `is_device_in_use` answers 1 / 0 / undef, and
+# undef means something inside it could not establish an answer — most
+# importantly `fuser`, which is the only check that sees a running QEMU holding
+# a device open with no mount and no holder. A safety check that cannot answer
+# must not answer "safe".
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+
+use lib '/usr/share/perl5';
+use PVE::Storage;
+use PVE::Storage::Custom::QNAPSANPlugin;
+
+my $VERSION = '0.1.0';
+
+my ($remove, $all, $show_version, $help);
+my @storages;
+GetOptions(
+    'storage=s' => \@storages,
+    'remove'    => \$remove,
+    'all'       => \$all,
+    'version'   => \$show_version,
+    'help'      => \$help,
+) or usage(1);
+
+if ($show_version) { print "pve-qnap-reap $VERSION\n"; exit 0 }
+usage(0) if $help;
+
+sub usage {
+    my ($rc) = @_;
+    print <<'EOF';
+pve-qnap-reap — remove this node's leftovers for LUNs the NAS no longer has.
+
+  pve-qnap-reap [--storage <id>]... [--all] [--remove]
+
+  --storage   a qnapsan storage to check. May be repeated.
+  --all       every qnapsan storage configured on this node.
+  --remove    actually flush the maps. Without it, nothing is changed.
+  --version
+
+Run it on the node that has the leftovers — a node that a VM was migrated AWAY
+from is the usual one. It never touches a device that is in use, and it refuses
+rather than guessing when it cannot tell.
+EOF
+    exit $rc;
+}
+
+usage(1) if !@storages && !$all;
+
+my $cfg = PVE::Storage::config();
+my @todo;
+if ($all) {
+    for my $id (sort keys %{ $cfg->{ids} }) {
+        push @todo, $id if ($cfg->{ids}{$id}{type} // '') eq 'qnapsan';
+    }
+    die "no qnapsan storage is configured on this node\n" if !@todo;
+} else {
+    for my $id (@storages) {
+        my $scfg = $cfg->{ids}{$id}
+            or die "there is no storage '$id' in the cluster configuration\n";
+        die "storage '$id' is not a qnapsan storage (it is $scfg->{type})\n"
+            if ($scfg->{type} // '') ne 'qnapsan';
+        push @todo, $id;
+    }
+}
+
+my $class = 'PVE::Storage::Custom::QNAPSANPlugin';
+my $acted = 0;
+my $skipped = 0;
+
+for my $storeid (@todo) {
+    my $scfg = $cfg->{ids}{$storeid};
+    print "storage '$storeid':\n";
+
+    my $report = eval {
+        $class->reap_orphans($storeid, $scfg, dry_run => $remove ? 0 : 1);
+    };
+    if ($@) {
+        my $err = $@; chomp $err;
+        # The complete live set or nothing at all: a failure to read the NAS
+        # must NOT become an empty listing, because an empty listing would make
+        # every volume on this node an orphan and this list feeds a flush.
+        print "  could not check: $err\n";
+        print "  nothing was changed.\n";
+        next;
+    }
+
+    if (!@{ $report // [] }) {
+        print "  nothing to reap.\n";
+        next;
+    }
+
+    for my $r (@$report) {
+        printf "  %-16s %-24s %s\n", $r->{action}, $r->{volname}, $r->{reason};
+        $acted++ if $r->{action} =~ /^(flushed|untracked)$/;
+        $skipped++ if $r->{action} eq 'skipped';
+    }
+}
+
+if (!$remove) {
+    print "\nNothing was changed. Add --remove to act on the above.\n";
+} else {
+    print "\n$acted item(s) cleaned up.\n";
+    print "$skipped skipped — see the reasons above. A skipped item is one this"
+        . " tool could not prove was safe to touch, which is deliberate.\n"
+        if $skipped;
+}
+
+exit 0;

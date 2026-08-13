@@ -1,0 +1,46 @@
+Source: jt-pve-storage-qnap
+Section: admin
+Priority: optional
+Maintainer: Jason Cheng (Jason Tools) <jason@jason.tools>
+Build-Depends: debhelper (>= 12)
+Standards-Version: 4.5.0
+Homepage: https://github.com/jasoncheng7115/jt-pve-storage-qnap
+
+Package: jt-pve-storage-qnap
+Architecture: all
+Depends: ${misc:Depends},
+         proxmox-ve (>= 8.0) | pve-manager (>= 8.0),
+         open-iscsi,
+         multipath-tools,
+         libwww-perl,
+         liblwp-protocol-https-perl,
+         libxml-libxml-perl
+Recommends: sg3-utils, psmisc, lsscsi
+Description: QNAP NAS storage plugin for Proxmox VE
+ A Proxmox VE custom storage plugin for QNAP QTS and QuTS hero over iSCSI, in
+ which one VM disk is one thin LUN on the NAS, so the NAS's own snapshots and
+ clones act on the unit an operator thinks about — no LVM layer and no shared
+ LUN carved up locally.
+ .
+ Registers the storage type "qnapsan". It requires Storage Manager V2, which
+ QTS 4.5.1 and every QuTS hero provide; the plugin refuses a firmware that
+ reports the legacy Storage Manager rather than failing later.
+ .
+ Every 0.x release is a prerelease. Nothing array-facing has run against a NAS
+ yet; what has and has not been
+ exercised against real hardware is listed in
+ /usr/share/doc/jt-pve-storage-qnap/TESTING.md. Read it before putting data on
+ this.
+ .
+ Two things shape what this plugin can offer. It does not set up per-host
+ access lists on the target, so CHAP is the access control it relies on. And QTS
+ allocates LUNs in whole GiB, so every disk size is rounded up.
+ .
+ This is an independent project. It is not developed, certified, endorsed or
+ maintained by QNAP Systems, Inc.
+ .
+ Also ships pve-qnap-api-probe, a read-only tool that asks a NAS what it
+ supports, and pve-qnap-reap, which clears leftovers a node keeps after a VM is
+ migrated away.
+ .
+ The plugin must be installed on every node of the cluster.

@@ -1,0 +1,309 @@
+#!/usr/bin/perl
+
+# Ask a QNAP NAS what it is and what it can do. READ ONLY.
+#
+# It creates nothing, changes nothing and deletes nothing — every call it makes
+# is a `func=extra_get` or the login itself. It is safe against a production
+# NAS, and it is the first thing to run when a storage will not add or a device
+# will not appear.
+#
+# It exists because the answers this plugin depends on are per-model and
+# per-firmware — the LUN and target ceilings, whether the firmware speaks
+# Storage Manager V2, whether it is QuTS hero (and therefore has instant
+# clones), and which pools exist. Guessing any of them produces a failure that
+# looks like something else.
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Term::ANSIColor ();
+use POSIX ();
+
+use lib '/usr/share/perl5';
+use PVE::Storage::Custom::QNAP::API;
+use PVE::Storage::Custom::QNAP::LUN;
+use PVE::Storage::Custom::QNAP::Target;
+use PVE::Storage::Custom::QNAP::Health;
+use PVE::Storage::Custom::QNAP::Multipath;
+use PVE::Storage::Custom::QNAP::ISCSI;
+# Imported explicitly even though Multipath already loads it. `perl -c` compiles
+# a call to a function another module happened to load, and the day that module
+# stops loading it this breaks somewhere unrelated — with a message about a
+# missing subroutine rather than about a missing tool.
+use PVE::Storage::Custom::QNAP::Command;
+
+my $VERSION = '0.1.0';
+
+my %opt = (port => 443, scheme => 'https');
+my $show_version;
+GetOptions(
+    'host=s'     => \$opt{host},
+    'user=s'     => \$opt{user},
+    'password=s' => \$opt{password},
+    'port=i'     => \$opt{port},
+    'scheme=s'   => \$opt{scheme},
+    'pool=i'     => \$opt{pool},
+    'insecure'   => \$opt{insecure},
+    'node'       => \$opt{node},
+    'version'    => \$show_version,
+    'help'       => \$opt{help},
+) or usage(1);
+
+if ($show_version) { print "pve-qnap-api-probe $VERSION\n"; exit 0 }
+usage(0) if $opt{help};
+
+sub usage {
+    my ($rc) = @_;
+    print <<'EOF';
+pve-qnap-api-probe — ask a QNAP NAS what it supports. Read only.
+
+  pve-qnap-api-probe --host <address> --user <admin> [--password <pw>]
+                     [--port 443] [--scheme https|http] [--pool <id>]
+                     [--insecure] [--node]
+
+  --host       NAS management address
+  --user       an administrator account (the Storage Manager and iSCSI CGIs
+               are administrator-only)
+  --password   read from the terminal if not given, so it stays out of the
+               shell history and out of the process list
+  --port       management port (default 443; QTS's HTTP admin port is 8080)
+  --scheme     https (default) or http. http puts the password on the wire.
+  --pool       also describe this storage pool
+  --insecure   do not verify the TLS certificate (QTS ships a self-signed one)
+  --node       also report what THIS node sees: iscsiadm, multipath, and the
+               plugin's own drop-in
+  --version
+
+It creates nothing and deletes nothing.
+EOF
+    exit $rc;
+}
+
+usage(1) if !$opt{host} || !$opt{user};
+
+if (!defined $opt{password}) {
+    # Never on the command line by default: an argument is visible in `ps` to
+    # every user on the node and lands in the shell history.
+    #
+    # POSIX::Termios rather than `stty`, for two reasons and not one. The
+    # obvious one is that this tool has a rule about spawning processes outside
+    # the command runner, and the build enforces it. The load-bearing one is
+    # that the runner CANNOT be used here: it gives the child a pipe for stdin,
+    # so an `stty` run through it would be changing the settings of a pipe and
+    # the password would still be echoed to the screen.
+    print "Password for $opt{user}\@$opt{host}: ";
+    my $fd = fileno(STDIN);
+    my $term = POSIX::Termios->new;
+    my $restore;
+    if (-t STDIN) {
+        $term->getattr($fd);
+        my $saved = $term->getlflag;
+        $term->setlflag($saved & ~POSIX::ECHO());
+        $term->setattr($fd, POSIX::TCSANOW());
+        $restore = sub {
+            $term->setlflag($saved);
+            $term->setattr($fd, POSIX::TCSANOW());
+        };
+    }
+    $opt{password} = <STDIN>;
+    # On every exit from here, including a Ctrl-C between the two: a terminal
+    # left with echo off is one the operator has to fix by hand, blind.
+    $restore->() if $restore;
+    print "\n";
+    chomp $opt{password} if defined $opt{password};
+}
+
+my ($OK, $WARN, $BAD, $DIM) = do {
+    my $tty = -t STDOUT;
+    $tty ? ('green', 'yellow', 'red', 'bright_black') : (undef) x 4;
+};
+sub c { my ($col, $s) = @_; return $col ? Term::ANSIColor::colored($s, $col) : $s }
+sub ok    { print '  ', c($OK,   '[ ok ]'), "   $_[0]\n" }
+sub warn_ { print '  ', c($WARN, '[warn]'), "   $_[0]\n" }
+sub bad   { print '  ', c($BAD,  '[fail]'), "   $_[0]\n" }
+sub info  { print '  ', c($DIM,  '[    ]'), "   $_[0]\n" }
+sub head  { print "\n", $_[0], "\n", ('-' x length $_[0]), "\n" }
+
+my $api = PVE::Storage::Custom::QNAP::API->new(
+    portals    => $opt{host},
+    port       => $opt{port},
+    scheme     => $opt{scheme},
+    username   => $opt{user},
+    password   => $opt{password},
+    ssl_verify => $opt{insecure} ? 0 : 1,
+    storeid    => 'probe',
+);
+
+head "Connection";
+eval { $api->login; 1 } or do {
+    my $err = $@; chomp $err;
+    bad $err;
+    print "\nNothing further can be asked without a session.\n";
+    exit 2;
+};
+ok "logged in to $opt{host}:$opt{port} over $opt{scheme}";
+warn_ "the certificate was not verified (--insecure)" if $opt{insecure};
+warn_ "the password travelled in clear — use --scheme https where you can"
+    if $opt{scheme} eq 'http';
+
+head "The NAS";
+my $info = $api->sysinfo;
+info "model      " . ($info->{model} // '?');
+info "hostname   " . ($info->{hostname} // '?');
+info "firmware   " . ($info->{firmware} // '?') . " build " . ($info->{build} // '?');
+
+# THE ONE THAT DECIDES WHETHER THIS PLUGIN WORKS AT ALL. The legacy Storage
+# Manager is a different set of CGI calls entirely.
+if ($api->is_storage_v2) {
+    ok "Storage Manager V2 (storage_v2=1) — this plugin's API surface";
+} else {
+    bad "this firmware reports the LEGACY Storage Manager (storage_v2 is "
+      . (($info->{storage_v2} // 'absent')) . "). The plugin implements V2 only.";
+}
+
+if ($api->is_zfs) {
+    ok "QuTS hero (is_zfs=1) — instant clones are available, so a Proxmox VE"
+     . " linked clone is instant";
+} else {
+    info "QTS (is_zfs=" . ($info->{is_zfs} // '0') . ") — clones COPY."
+       . " A linked clone is as slow and as large as a full one.";
+}
+
+head "iSCSI portal";
+my $p = $api->portal_info;
+if (!%$p) {
+    bad "the NAS did not describe its iSCSI portal";
+} else {
+    my $on = $p->{service_enabled};
+    if (defined $on && $on eq '0') {
+        bad "the iSCSI target service is TURNED OFF. Turn it on in"
+          . " Storage & Snapshots > iSCSI & Fibre Channel.";
+    } else {
+        ok "the iSCSI target service is on, port " . ($p->{service_port} // '?');
+    }
+    info "target IQN prefix   " . ($p->{iqn_prefix} // '?');
+    info "target IQN postfix  " . ($p->{iqn_postfix} // '?');
+
+    # THE CEILING THAT MATTERS. One VM disk is one LUN, so this is the number of
+    # virtual disks this NAS can hold — and no amount of free space changes it.
+    my $ml = $p->{max_luns};
+    my $mt = $p->{max_targets};
+    if (defined $ml) {
+        info "maximum LUNs        $ml   <- one VM disk is one LUN";
+    } else {
+        warn_ "this NAS did not report a LUN ceiling, so the plugin cannot"
+            . " refuse an allocation before the NAS does";
+    }
+    info "maximum targets     " . ($mt // '(not reported)');
+    info "maximum LUN size    " . ($p->{max_lun_size_tb} // '?');
+}
+
+head "In use now";
+my $lun = PVE::Storage::Custom::QNAP::LUN->new($api);
+my $luns = eval { $lun->list };
+if (!$luns) {
+    my $e = $@; chomp $e; bad $e;
+} else {
+    my $n = scalar @$luns;
+    my $max = $p->{max_luns};
+    if (defined $max && $n >= $max) {
+        bad "$n of $max LUNs used — the NAS is full. No further disks can be"
+          . " created however much space is free.";
+    } elsif (defined $max && $max - $n <= 16) {
+        warn_ "$n of $max LUNs used — only " . ($max - $n) . " left.";
+    } else {
+        ok "$n LUN(s)" . (defined $max ? " of $max" : '');
+    }
+    my $mapped = scalar grep { ($_->{bMap} // '0') eq '1' } @$luns;
+    info "$mapped of them are mapped to a target";
+}
+
+my $tgt = PVE::Storage::Custom::QNAP::Target->new($api);
+my $targets = eval { $tgt->list };
+if ($targets) {
+    my $n = scalar @$targets;
+    my $max = $p->{max_targets};
+    if (defined $max && $n >= $max) {
+        bad "$n of $max targets used — the NAS cannot create another.";
+    } else {
+        ok "$n target(s)" . (defined $max ? " of $max" : '');
+    }
+}
+
+head "Storage pools";
+my $pools = PVE::Storage::Custom::QNAP::Health::pool_list($api);
+if (!defined $pools) {
+    bad "the NAS would not list its storage pools";
+} elsif (!@$pools) {
+    bad "this NAS has no storage pools. A block-based LUN needs one.";
+} else {
+    for my $id (@$pools) {
+        my $pi = PVE::Storage::Custom::QNAP::Health::pool_info($api, $id);
+        if (!$pi) { warn_ "pool $id could not be described"; next }
+        my $free = $pi->{real_free} // $pi->{free};
+        my $line = sprintf('pool %-3s  %8.1f GiB free of %8.1f GiB  status %s',
+            $id,
+            (defined $free ? $free / 1024**3 : 0),
+            (defined $pi->{total} ? $pi->{total} / 1024**3 : 0),
+            ($pi->{status} // '?'));
+        if (defined $pi->{status} && $pi->{status} =~ /\A-/) { bad $line }
+        elsif ($pi->{over_threshold} && $pi->{over_threshold} ne '0') { warn_ $line }
+        else { ok $line }
+    }
+    info "use one of these numbers as qnap-pool";
+}
+
+if (defined $opt{pool}) {
+    head "Pool $opt{pool} in detail";
+    my $pi = PVE::Storage::Custom::QNAP::Health::pool_info($api, $opt{pool});
+    if (!$pi) {
+        bad "there is no pool $opt{pool} on this NAS, or it could not be read";
+    } else {
+        info sprintf('%-22s %s', $_, $pi->{$_} // '(not reported)')
+            for qw(id status type total free real_free allocated threshold);
+        # `real_freesize_bytes` is what an allocation can ACTUALLY draw on:
+        # `freesize_bytes` still counts space the NAS has promised to snapshots.
+        info "the plugin reports 'real_free' as the available space, because"
+           . " the difference is space already promised to snapshots";
+    }
+}
+
+$api->logout;
+
+if ($opt{node}) {
+    head "This node";
+
+    if (PVE::Storage::Custom::QNAP::ISCSI::is_available()) {
+        ok "iscsiadm answers";
+    } else {
+        bad "iscsiadm is not usable here. Install open-iscsi and start iscsid.";
+    }
+
+    my $sessions = PVE::Storage::Custom::QNAP::ISCSI::sessions();
+    info scalar(@$sessions) . " iSCSI session(s) on this node";
+    info "  $_->{iqn}  at $_->{portal}" for @$sessions;
+
+    my $conf = PVE::Storage::Custom::QNAP::Multipath::CONF_FILE;
+    if (-e $conf) {
+        ok "the multipath drop-in is installed at $conf";
+    } else {
+        # Written by activate_storage, so its absence before the first storage
+        # is added is expected rather than wrong.
+        info "the multipath drop-in is not installed yet ($conf)."
+           . " activate_storage writes it when the first storage is added.";
+    }
+
+    for my $tool (qw(iscsiadm multipath multipathd dmsetup blockdev fuser)) {
+        my $path = PVE::Storage::Custom::QNAP::Command::tool_path($tool);
+        # A PVE daemon has NO PATH at all, so a tool that is not in one of the
+        # resolver's directories cannot be run from the web interface even
+        # though it works perfectly from a login shell.
+        if ($path) { ok "$tool -> $path" }
+        else { bad "$tool was not found. open-iscsi, multipath-tools and psmisc"
+                 . " provide these." }
+    }
+}
+
+print "\nNothing was created, changed or deleted.\n";
+exit 0;

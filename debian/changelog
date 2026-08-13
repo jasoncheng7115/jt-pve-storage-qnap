@@ -1,0 +1,23 @@
+jt-pve-storage-qnap (0.1.0-1) unstable; urgency=medium
+
+  * First release. Registers the storage type "qnapsan": one VM disk is one thin
+    LUN on a QNAP NAS over iSCSI, with the NAS's own snapshots and clones.
+  * NOT YET EXERCISED AGAINST HARDWARE — docs/TESTING.md lists every open item,
+    and every 0.x release is a prerelease.
+  * Requires Storage Manager V2, detected from authLogin.cgi's storage_v2 flag
+    and refused rather than discovered later. QuTS hero is detected from is_zfs
+    and uses instant clones, which is what makes a linked clone cheap; on QTS a
+    clone copies.
+  * Sizes are rounded UP to a whole GiB, because add_lun takes a capacity in GiB
+    and has no finer step, and volume_size_info reports what the NAS actually
+    has rather than what PVE asked for.
+  * clone_qsnapshot and recover_snapshot fork on the NAS and report through a
+    channel keyed by CGI name rather than by job, so both are serialised across
+    the cluster with PVE's own storage lock.
+  * Credentials are kept in /etc/pve/priv/storage/<id>.qnap rather than in
+    storage.cfg, and every call is a POST, so no credential travels in a URL.
+  * Snapshots carry no record of who took them on QTS, so ownership lives in the
+    name — an operator's own scheduled snapshots are invisible to PVE and
+    therefore cannot be deleted by a VM operation.
+
+ -- Jason Cheng (Jason Tools) <jason@jason.tools>  Wed, 13 Aug 2026 12:00:00 +0800

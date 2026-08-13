@@ -1,0 +1,117 @@
+name: Checks and .deb build
+
+# Every push and pull request. The .deb is an artefact here rather than a
+# release: releases come from a tag, in release.yml.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Safety and syntax checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # Without these, `perl -c` fails at "Can't locate XML/LibXML.pm" — which is
+      # not "Can't locate PVE/", the only failure the syntax target tolerates.
+      # A related project had exactly this missing and its CI failed on every
+      # run for months, at the first step.
+      - name: Install runtime Perl modules
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwww-perl liblwp-protocol-https-perl libxml-libxml-perl
+
+      # Each guard is its own step so that a red run says which rule was
+      # broken without anyone opening the log.
+      - name: Forbid node-wide multipath flush
+        run: make check-multipath-flush
+
+      - name: Forbid credentials in URLs
+        run: make check-secrets
+
+
+      - name: Every external command must go through the tool resolver
+        run: make check-tool-paths
+
+      - name: Nothing private in the published site
+        run: make check-site
+
+      - name: Perl syntax
+        run: make syntax
+
+      # A red run must say WHAT failed, not just that something did. The first
+      # version printed `make unit`'s summary and nothing else, so a failure
+      # that could not be reproduced on a Proxmox VE node — which is every
+      # developer machine here — left the log as the only evidence, and the
+      # logs of a public repository need a token to download. In a related
+      # project two releases were held up working that out.
+      # The failing lines are emitted as ::error:: annotations, not just printed.
+      # A public repository's Actions LOGS need a token to download, but its
+      # annotations do not — so this is what makes a red run diagnosable by
+      # anyone who can see the repository, including from a machine that cannot
+      # reproduce the failure.
+      - name: Unit tests
+        run: |
+          # `if`, not `make unit && exit 0`: GitHub runs a step with `bash -e`,
+          # so a failing left-hand side of `&&` ends the whole script there and
+          # the reporting below never runs. An `if` condition is exempt from
+          # `set -e`, which is the entire reason it is written this way.
+          if make unit; then exit 0; fi
+          prove -Ilib -v t/*.t > /tmp/verbose.log 2>&1 || true
+          grep -aE "^not ok|^# +Failed|^# +got|^# +expected|Can't locate|Dubious|^Bailout|syntax error|Undefined subroutine" \
+            /tmp/verbose.log | head -25 | while IFS= read -r line; do
+              printf '::error::%s\n' "$(printf '%s' "$line" | sed 's/%/%25/g')"
+            done
+          exit 1
+
+      # Documents come in pairs. A change that updates one language and not
+      # the other is the most common way this family of projects has shipped a
+      # half-translated page.
+      - name: Every document has both languages
+        run: |
+          fail=0
+          for f in README.md CHANGELOG.md docs/TESTING.md docs/QNAP-ACCOUNT.md docs/SUPPORTED-QNAP-OS.md; do
+            pair="${f%.md}_zh-TW.md"
+            if [ ! -f "$pair" ]; then
+              echo "ERROR: $f has no $pair"
+              fail=1
+            fi
+          done
+          exit $fail
+
+  build-deb:
+    name: Build .deb
+    needs: checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential debhelper fakeroot \
+            libwww-perl liblwp-protocol-https-perl libxml-libxml-perl
+
+      - name: Build
+        run: dpkg-buildpackage -us -uc -b
+
+      - name: Collect
+        run: |
+          mkdir -p artifacts
+          cp ../jt-pve-storage-qnap_*_all.deb artifacts/
+          ls -la artifacts/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jt-pve-storage-qnap-deb
+          path: artifacts/jt-pve-storage-qnap_*_all.deb
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,125 @@
+name: Release
+
+# A pushed tag is the only thing that publishes. The tag and debian/changelog
+# must agree about the version: a release whose own files disagree about what
+# it is, is worse than no release.
+#
+# Git tags cannot contain "~", so the tag uses a hyphen (v0.1.0-beta1) while
+# the Debian version keeps the tilde (0.1.0~beta1). That is not an
+# inconsistency to fix — dpkg needs the tilde to sort a prerelease BELOW the
+# final version, and git simply forbids the character.
+on:
+  push:
+    tags: [ 'v*' ]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential debhelper fakeroot \
+            libwww-perl liblwp-protocol-https-perl libxml-libxml-perl
+
+      - name: The tag and debian/changelog must agree
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          deb=$(dpkg-parsechangelog --show-field Version | sed 's/-[0-9]*$//')
+          # The tag carries a hyphen where the Debian version carries a tilde.
+          normalised=$(printf '%s' "$deb" | tr '~' '-')
+          echo "tag:              $tag"
+          echo "debian/changelog: $deb  (normalised: $normalised)"
+          if [ "$tag" != "$normalised" ]; then
+            echo "ERROR: the tag and debian/changelog name different versions."
+            echo "Nothing is published until they agree."
+            exit 1
+          fi
+
+      - name: Checks
+        run: make check-multipath-flush check-secrets check-tool-paths syntax unit
+
+      - name: Build
+        run: dpkg-buildpackage -us -uc -b
+
+      # GitHub rewrites "~" in a release asset's filename to ".", so a checksum
+      # file listing the name dpkg-buildpackage produced cannot be verified
+      # against the file anyone actually downloads: `sha256sum -c SHA256SUMS`
+      # answers "No such file or directory". A related project's first two
+      # releases shipped exactly that. So rename first, and hash the name that
+      # will be served.
+      #
+      # The rename is safe: dpkg reads the version from the package's control
+      # data, never from the filename.
+      - name: Collect, with the name GitHub will actually serve
+        run: |
+          mkdir -p artifacts
+          for f in ../jt-pve-storage-qnap_*_all.deb; do
+            served=$(basename "$f" | tr '~' '.')
+            cp "$f" "artifacts/$served"
+            echo "$(basename "$f")  ->  $served"
+          done
+          (cd artifacts && sha256sum *.deb > SHA256SUMS)
+          cat artifacts/SHA256SUMS
+
+      # Proves the published checksum file verifies, rather than assuming the
+      # rename above was complete.
+      - name: The checksum file must verify against the collected files
+        run: cd artifacts && sha256sum -c SHA256SUMS
+
+      # The changelog entry for this version becomes the release notes, so the
+      # notes cannot drift from the package's own record of itself.
+      - name: Release notes from debian/changelog
+        run: |
+          {
+            echo "## What is in this release"
+            echo
+            dpkg-parsechangelog --show-field Changes \
+              | sed '1d' | sed 's/^ //' | sed 's/^\.$//'
+            echo
+            echo "### Before installing"
+            echo
+            echo "Read [docs/TESTING.md](https://github.com/jasoncheng7115/jt-pve-storage-qnap/blob/main/docs/TESTING.md)."
+            echo "It is the register of what has been verified against real"
+            echo "hardware and what has not. Every 0.x release is a prerelease."
+            echo
+            echo '```'
+            cat artifacts/SHA256SUMS
+            echo '```'
+          } > notes.md
+          cat notes.md
+
+      # A SECOND COPY UNDER A STABLE NAME.
+      #
+      # `/releases/latest/download/<asset>` needs the exact asset filename, and the
+      # real one carries the version — so there was no URL that stayed correct
+      # across releases, and the documentation shipped a `wget` that 404'd. This
+      # copy gives one: /releases/latest/download/jt-pve-storage-qnap_all.deb
+      #
+      # It is a copy, not a rename: the versioned asset stays, because `releases/`
+      # archives it under that name and a tester must be able to fetch exactly what
+      # they run.
+      - name: Also publish the .deb under a version-free name
+        run: |
+          src=$(ls artifacts/jt-pve-storage-qnap_*_all.deb | head -1)
+          cp "$src" artifacts/jt-pve-storage-qnap_all.deb
+          ls -la artifacts/
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/jt-pve-storage-qnap_*_all.deb
+            artifacts/jt-pve-storage-qnap_all.deb
+            artifacts/SHA256SUMS
+          body_path: notes.md
+          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
+          fail_on_unmatched_files: true

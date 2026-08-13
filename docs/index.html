@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="en" data-lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>jt-pve-storage-qnap -- QNAP NAS storage plugin for Proxmox VE</title>
+<meta name="description" content="A Proxmox VE storage plugin for QNAP QTS and QuTS hero over iSCSI: one VM disk is one thin LUN, so the NAS's own snapshots, rollback and clones act on the unit an operator thinks about. Not yet tested on hardware, with an honest register of what is verified and what is not. An independent project, not developed or endorsed by QNAP. MIT License.">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="jt-pve-storage-qnap">
+<meta property="og:description" content="QNAP NAS storage plugin for Proxmox VE over iSCSI. One VM disk = one thin LUN: snapshots, rollback, instant clones on QuTS hero, multipath, live migration. Open source, MIT License.">
+<meta property="og:url" content="https://jasoncheng7115.github.io/jt-pve-storage-qnap/">
+<meta property="og:site_name" content="jt-pve-storage-qnap">
+<meta property="og:image" content="https://jasoncheng7115.github.io/jt-pve-storage-qnap/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:alt" content="jt-pve-storage-qnap — QNAP QTS / QuTS hero iSCSI plugin for Proxmox VE">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jasoncheng7115.github.io/jt-pve-storage-qnap/og-image.png">
+<meta name="twitter:title" content="jt-pve-storage-qnap">
+<meta name="twitter:description" content="QNAP NAS storage plugin for Proxmox VE over iSCSI. One VM disk = one thin LUN. Snapshots, rollback, instant clones, multipath. Open source, MIT License.">
+
+<link rel="stylesheet" href="style.css">
+
+<script>
+// Which language to show, in this order:
+//
+//   1. ?lang=zh or ?lang=en in the URL. Explicit, so it always wins — a link
+//      can carry a language, and a reader can bookmark or share the page in the
+//      one they read.
+//   2. Otherwise the browser's own preference list. The first entry that is
+//      Chinese or English decides, so a reader whose list is ja, zh-TW, en gets
+//      Chinese. Nothing matching means English.
+//
+// A clean URL is therefore "whatever suits you", and is the one to share when
+// the reader's language is not known.
+//
+// This runs in <head>, before the body renders. Doing it at the end of <body>
+// left a visible flash of the wrong language.
+function pickLang() {
+    var asked = new URLSearchParams(location.search).get('lang');
+    if (asked === 'zh' || asked === 'en') { return asked; }
+
+    var prefs = navigator.languages && navigator.languages.length
+        ? navigator.languages : [navigator.language || ''];
+    for (var i = 0; i < prefs.length; i++) {
+        var p = String(prefs[i]).toLowerCase();
+        if (p.indexOf('zh') === 0) { return 'zh'; }
+        if (p.indexOf('en') === 0) { return 'en'; }
+    }
+    return 'en';
+}
+(function () {
+    var lang = pickLang();
+    var html = document.documentElement;
+    html.setAttribute('data-lang', lang);
+    html.setAttribute('lang', lang === 'zh' ? 'zh-Hant' : 'en');
+})();
+</script>
+</head>
+<body>
+
+<header class="top-nav">
+    <div class="top-nav__brand">
+        <div class="top-nav__brand-icon">QN</div>
+        <span><span>jt-pve-storage-qnap</span></span>
+    </div>
+    <div class="top-nav__actions">
+        <button class="lang-toggle" onclick="toggleLang()" title="Switch Language">
+            <span class="lang-en">繁體中文</span>
+            <span class="lang-zh">English</span>
+        </button>
+        <a href="https://github.com/jasoncheng7115/jt-pve-storage-qnap" class="github-link" target="_blank" rel="noopener">
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+            <span>GitHub</span>
+        </a>
+        <button class="hamburger" onclick="toggleSidebar()" aria-label="Menu">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+        </button>
+    </div>
+</header>
+
+<div class="sidebar-overlay" onclick="toggleSidebar()"></div>
+<nav class="sidebar" id="sidebar">
+    <div class="sidebar__section">
+        <div class="sidebar__heading">
+            <span class="lang-en">Start here</span><span class="lang-zh">從這裡開始</span>
+        </div>
+        <a href="#hero" class="sidebar__link"><span class="lang-en">Overview</span><span class="lang-zh">概覽</span></a>
+        <a href="#status" class="sidebar__link"><span class="lang-en">Read this first</span><span class="lang-zh">請先讀這個</span></a>
+        <a href="#features" class="sidebar__link"><span class="lang-en">Which operations work</span><span class="lang-zh">支援的操作</span></a>
+    </div>
+    <div class="sidebar__section">
+        <div class="sidebar__heading">
+            <span class="lang-en">What QTS decides for you</span><span class="lang-zh">QTS 決定的事</span>
+        </div>
+        <a href="#qts" class="sidebar__link"><span class="lang-en">Three things about QTS</span><span class="lang-zh">QTS 的三個關鍵差異</span></a>
+        <a href="#os" class="sidebar__link"><span class="lang-en">Supported QNAP OS</span><span class="lang-zh">支援的 QNAP 作業系統</span></a>
+        <a href="#limits" class="sidebar__link"><span class="lang-en">The LUN ceiling</span><span class="lang-zh">LUN 數量上限</span></a>
+    </div>
+    <div class="sidebar__section">
+        <div class="sidebar__heading">
+            <span class="lang-en">Before you start</span><span class="lang-zh">開始之前</span>
+        </div>
+        <a href="#requirements" class="sidebar__link"><span class="lang-en">Requirements</span><span class="lang-zh">系統需求</span></a>
+        <a href="#account" class="sidebar__link"><span class="lang-en">The NAS account &amp; CHAP</span><span class="lang-zh">NAS 帳號與 CHAP</span></a>
+    </div>
+    <div class="sidebar__section">
+        <div class="sidebar__heading">
+            <span class="lang-en">Use it</span><span class="lang-zh">使用</span>
+        </div>
+        <a href="#install" class="sidebar__link"><span class="lang-en">Installing</span><span class="lang-zh">安裝</span></a>
+        <a href="#configure" class="sidebar__link"><span class="lang-en">Adding the storage</span><span class="lang-zh">新增 Storage</span></a>
+        <a href="#probe" class="sidebar__link"><span class="lang-en">The discovery tool</span><span class="lang-zh">探索工具</span></a>
+        <a href="#reap" class="sidebar__link"><span class="lang-en">The cleanup tool</span><span class="lang-zh">清理工具</span></a>
+        <a href="#trouble" class="sidebar__link"><span class="lang-en">When something goes wrong</span><span class="lang-zh">故障處理</span></a>
+    </div>
+    <div class="sidebar__section">
+        <div class="sidebar__heading">
+            <span class="lang-en">Project</span><span class="lang-zh">專案</span>
+        </div>
+        <a href="#options" class="sidebar__link"><span class="lang-en">Options</span><span class="lang-zh">設定選項</span></a>
+        <a href="#contribute" class="sidebar__link"><span class="lang-en">How to help, and the licence</span><span class="lang-zh">如何協助與授權</span></a>
+        <a href="#related" class="sidebar__link"><span class="lang-en">Related projects</span><span class="lang-zh">相關專案</span></a>
+    </div>
+</nav>
+
+<main class="main-content">
+
+
+<section class="hero" id="hero">
+    <div class="hero__grid-bg"></div>
+    <div class="hero__glow"></div>
+    <div class="hero__glow-left"></div>
+    <div class="hero__content">
+        <!-- The version sits on this line, immediately after the class, because
+             <code>make release-check</code> reads it from here to prove the site has not
+             drifted from the package. Do not reflow it. -->
+        <div class="hero__badge">v0.1.0 <span class="hero__badge-sep"></span> MIT <span class="hero__badge-sep"></span> <span class="lang-en">PRERELEASE</span><span class="lang-zh">預覽版</span></div>
+        <h1 class="hero__title">jt-pve-storage-qnap</h1>
+        <p class="hero__subtitle">
+            <span class="lang-en">Proxmox VE uses a QNAP NAS over iSCSI directly as its VM storage back end.</span>
+            <span class="lang-zh">讓 Proxmox VE 透過 iSCSI，直接把 QNAP NAS 當成 VM 儲存後端。</span>
+        </p>
+        <p class="hero__project-desc">
+            <span class="lang-en">Every Proxmox VE VM disk maps to one thin LUN on the QNAP NAS. So creating, removing, resizing, cloning, snapshotting and rolling back a VM all drive the NAS's own LUN features, instead of carving one large shared LUN up with LVM on the PVE side. <strong>No extra LVM storage layer, and no LUNs to manage by hand.</strong></span>
+            <span class="lang-zh">每一顆 Proxmox VE VM 磁碟，直接對應 QNAP NAS 上的一個 thin LUN。因此 VM 的建立、刪除、擴充、Clone、Snapshot 與 Rollback，都可以直接操作 NAS 原生的 LUN 能力，而不是先建立一個大型共用 LUN，再交給 PVE 用 LVM 切割。<strong>沒有額外的 LVM 儲存層，也不需要手動管理 LUN。</strong></span>
+        </p>
+        <p class="hero__caps">
+            <span class="lang-en">QTS &amp; QuTS hero · PVE 8 / 9 · Shared Storage · Live Migration · Snapshot / Rollback · Instant Clone · Multipath</span>
+            <span class="lang-zh">支援 QTS 與 QuTS hero、PVE 8 / 9、Shared Storage、Live Migration、Snapshot / Rollback、Instant Clone 與 Multipath。</span>
+        </p>
+        <div class="hero__actions">
+            <a href="#status" class="btn btn--primary"><span class="lang-en">What is not verified yet</span><span class="lang-zh">哪些還沒驗證</span></a>
+            <a href="https://github.com/jasoncheng7115/jt-pve-storage-qnap" class="btn btn--outline" target="_blank" rel="noopener">
+                <span class="lang-en">GitHub</span><span class="lang-zh">GitHub</span>
+            </a>
+        </div>
+    </div>
+</section>
+
+<!-- Directly under the hero, and before any content. The hero says what this
+     is; this says whether it is ready. Nothing can be read about the plugin
+     without passing it, which is the property that matters — a reader who
+     skims the hero and installs this would have been misled by omission. It
+     comes down when there is a measurement to replace it with. -->
+<div class="untested">
+    <div class="untested__inner">
+        <div class="untested__title">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <span class="lang-en">NOT YET TESTED ON HARDWARE</span><span class="lang-zh">尚未實機測試</span>
+        </div>
+        <div class="untested__body">
+            <span class="lang-en"><strong>No part of this plugin has ever run against a real QNAP NAS.</strong> It is written from the API documentation alone. It compiles and passes 196 unit tests, and that proves nothing about whether it works on your NAS. <strong>Do not put production data on it.</strong> Run it against a spare NAS, or a pool you are willing to lose — and <a href="#status">read what is still unanswered</a> first.</span>
+            <span class="lang-zh"><strong>這個外掛沒有任何一部分曾經在實體 QNAP NAS 上執行過。</strong>它完全是依照 API 文件寫成的。它可以編譯、通過 196 個單元測試，而這些都不能證明它在你的 NAS 上會正常運作。<strong>請不要放正式資料。</strong>請用一台備用 NAS、或一個你願意失去的儲存池來跑 —— 並先<a href="#status">看看還有哪些事沒有答案</a>。</span>
+        </div>
+    </div>
+</div>
+
+<section class="doc-section doc-section--flag" id="status">
+    <h2 class="section-title"><span class="lang-en">Read this first</span><span class="lang-zh">請先讀這個</span></h2>
+
+    <div class="alert alert--danger">
+        <strong><span class="lang-en">This has not been run against a QNAP NAS yet.</span><span class="lang-zh">這個版本尚未在實體 QNAP NAS 上執行過。</span></strong><br>
+        <span class="lang-en">Every 0.x release is a prerelease. Nothing array-facing has been answered by a NAS yet, and every open item is listed in <a href="https://github.com/jasoncheng7115/jt-pve-storage-qnap/blob/main/docs/TESTING.md">TESTING.md</a> in the order it should be settled. Do not put data you care about on this yet.</span>
+        <span class="lang-zh">0.x 全部都是預覽版本。所有與陣列溝通的部分都還沒有任何一台 NAS 回應過，所有待驗證項目都依處理順序列在 <a href="https://github.com/jasoncheng7115/jt-pve-storage-qnap/blob/main/docs/TESTING.md">TESTING.md</a>。請先不要把重要資料放上來。</span>
+    </div>
+
+    <p>
+        <span class="lang-en">The related projects in this family reached stability by measuring an array and writing down what it actually did, rather than by trusting a document. This one is at the start of that process, and saying so is the point of this section.</span>
+        <span class="lang-zh">這個家族的其他專案，是靠實際量測陣列、把它真正的行為寫下來才穩定的，不是靠相信文件。這個專案才剛開始那個過程，把這件事講清楚就是這一節存在的意義。</span>
+    </p>
+
+    <h3 class="subsection-title"><span class="lang-en">What that means concretely</span><span class="lang-zh">具體來說</span></h3>
+    <ul>
+        <li><span class="lang-en">Where the NAS's behaviour is known, the plugin follows it.</span><span class="lang-zh">NAS 的行為已知的地方，外掛就照著做。</span></li>
+        <li><span class="lang-en">Where it is not, the code is deliberately <strong>strict</strong> — it refuses rather than assumes, so a wrong guess surfaces as a message naming the reason instead of as a bare negative number from the NAS.</span><span class="lang-zh">行為未知的地方，程式碼刻意選擇<strong>嚴格</strong> —— 寧可拒絕也不假設，讓猜錯時看到的是一句說明原因的訊息，而不是 NAS 回來的一個負數。</span></li>
+        <li><span class="lang-en">The node-facing half — multipath handling, iSCSI node management, the bounded command runner, WWID tracking — <strong>has</strong> been measured, on other arrays. What it protects against is the node's and the kernel's behaviour, which does not change with the storage vendor.</span><span class="lang-zh">面向節點的那一半 —— multipath 處理、iSCSI node 管理、有界限的外部指令執行、WWID 追蹤 —— <strong>是</strong>經過實測的，只是在別的陣列上。它防的是節點與核心的行為，那不會因為儲存廠牌而改變。</span></li>
+    </ul>
+
+    <h3 class="subsection-title"><span class="lang-en">The three that would change the design</span><span class="lang-zh">會影響設計的三項</span></h3>
+    <ol>
+        <li><span class="lang-en">Does the NAS's <code>LUNNAA</code> equal the kernel's <code>/sys/block/&lt;sd&gt;/device/wwid</code>? Every device in this plugin is identified by comparing them.</span><span class="lang-zh">NAS 回報的 <code>LUNNAA</code> 是否等於核心的 <code>/sys/block/&lt;sd&gt;/device/wwid</code>？這個外掛靠比對這兩者來辨識每一個裝置。</span></li>
+        <li><span class="lang-en">What does a QNAP LUN report as its SCSI vendor string? If it is not <code>QNAP</code>, the multipath drop-in does not apply and the LUN falls back to defaults that include <code>no_path_retry queue</code>.</span><span class="lang-zh">QNAP LUN 的 SCSI vendor 字串是什麼？如果不是 <code>QNAP</code>，multipath 設定就不會生效，LUN 會落回包含 <code>no_path_retry queue</code> 的預設值。</span></li>
+        <li><span class="lang-en">Does <code>authLogin.cgi</code> accept a POST? Every call this plugin makes is a POST, so that no credential travels in a URL.</span><span class="lang-zh"><code>authLogin.cgi</code> 收不收 POST？這個外掛所有呼叫都用 POST，這樣憑證就不會出現在 URL 裡。</span></li>
+    </ol>
+</section>
+
+<section class="doc-section" id="features">
+    <h2 class="section-title"><span class="lang-en">Which Proxmox VE operations work</span><span class="lang-zh">支援的 Proxmox VE 操作</span></h2>
+    <p class="section-subtitle">
+        <span class="lang-en">Implemented and unit-tested, <strong>not yet driven on hardware</strong> — for virtual machines or for containers. The rows that are not a plain yes say why.</span>
+        <span class="lang-zh">已實作並通過單元測試，<strong>但尚未在實機上跑過</strong> —— 虛擬機與容器都一樣。不是單純「可以」的那幾列，都寫出原因。</span>
+    </p>
+    <p>
+        <span class="lang-en">A container's disk is the same object as a virtual machine's: one thin LUN, one multipath device. The difference is what sits on top — Proxmox VE puts a filesystem on a container's LUN and mounts it <em>on the host</em>, where a VM's disk is handed to the guest whole. That is why two rows below differ, and only two.</span>
+        <span class="lang-zh">容器的磁碟和虛擬機的磁碟是同一種東西：一個 thin LUN、一個 multipath 裝置。差別在上層 —— Proxmox VE 會在容器的 LUN 上建立檔案系統並掛在<em>主機上</em>，而虛擬機的磁碟是整顆交給客體。這就是下表只有兩列不同的原因。</span>
+    </p>
+
+    <div class="table-wrap">
+        <table class="table--matrix">
+            <thead>
+                <tr>
+                    <th><span class="lang-en">Operation</span><span class="lang-zh">操作</span></th>
+                    <th><span class="lang-en">VM</span><span class="lang-zh">虛擬機</span></th>
+                    <th><span class="lang-en">Container</span><span class="lang-zh">容器</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><span class="lang-en">Create and remove a disk</span><span class="lang-zh">建立、移除磁碟</span>
+                        <div class="cell-note"><span class="lang-en">A container needs <code>rootdir</code> in the storage's content types: <code>--content images,rootdir</code>.</span><span class="lang-zh">容器需要在儲存的內容類型裡包含 <code>rootdir</code>：<code>--content images,rootdir</code>。</span></div></td>
+                    <td class="yes"><span class="status-badge status-badge--supported">yes</span></td>
+                    <td class="yes"><span class="status-badge status-badge--supported">yes</span></td>
+                </tr>
+                <tr>
+                    <td><span class="lang-en">Thin provisioning</span><span class="lang-zh">精簡配置</span>
+                        <div class="cell-note"><span class="lang-en">Every disk is a thin LUN, so it occupies what has been written rather than what it was created as. Because that can overcommit the pool, <code>qnap-min-free</code> refuses to allocate once the pool's free space falls below it.</span><span class="lang-zh">每一顆磁碟都是 thin LUN，佔用的是已經寫入的量，不是建立時的大小。因為這樣可能超額配置儲存池，所以剩餘空間低於 <code>qnap-min-free</code> 時會拒絕配置。</span></div></td>
+                    <td class="yes"><span class="status-badge status-badge--supported">yes</span></td>
+                    <td class="yes"><span class="status-badge status-badge--supported">yes</span></td>
+                </tr>
+                <tr>
+                    <td><span class="lang-en">Resize (grow)</span><span class="lang-zh">擴充容量</span>
+                        <div class="cell-note"><span class="lang-en">Rounded up to a whole GiB — see below. For a container Proxmox VE grows the filesystem on top afterwards; for a VM the guest does that itself.</span><span class="lang-zh">會進位到整數 GiB —— 見下一節。容器由 Proxmox VE 接著擴充上層檔案系統；虛擬機則是由客體自己處理。</span></div></td>
+                    <td class="yes"><span class="status-badge status-badge--supported">yes</span></td>
+                    <td class="yes"><span class="status-badge status-badge--supported">yes</span></td>
+                </tr>
+                <tr>
+                    <td><span class="lang-en">Shrink a disk</span><span class="lang-zh">縮小磁碟</span>
+                        <div class="cell-note"><span class="lang-en">Refused, loudly, for both. Shrinking a LUN under a filesystem destroys data, and PVE writes the requested size into the configuration whatever a plugin returns — so a silent no-op would leave it claiming a size the NAS does not have.</span><span class="lang-zh">兩者都明確拒絕。在檔案系統底下縮小 LUN 會毀資料，而且不論外掛回傳什麼，PVE 都會把要求的大小寫進設定 —— 所以「安靜地不做事」會讓設定宣稱一個 NAS 上不存在的容量。</span></div></td>
+                    <td class="yes"><span class="status-badge status-badge--planned">no</span></td>
+                    <td class="yes"><span class="status-badge status-badge--planned">no</span></td>
+                </tr>
+                <tr>
+                    <td><span class="lang-en">Snapshot, delete snapshot, roll back</span><span class="lang-zh">快照、刪除快照、還原</span>
+                        <div class="cell-note"><span class="lang-en">Per LUN, not per volume: the rollback call is made with <code>by_lun=1</code>, so it does not take every other LUN on the same storage volume with it.</span><span class="lang-zh">以 LUN 為單位，不是以 volume 為單位：還原呼叫帶 <code>by_lun=1</code>，所以不會連同一個 volume 上的其他 LUN 一起還原。</span></div>
+                        <div class="cell-note"><span class="lang-en">The plugin answers <code>volume_snapshot_needs_fsfreeze</code> yes, so PVE freezes a running container's mountpoints before the NAS takes the snapshot — its root is mounted on the host, unlike a VM's disk.</span><span class="lang-zh">外掛的 <code>volume_snapshot_needs_fsfreeze</code> 回答「是」，所以 PVE 會在 NAS 取快照之前先凍結執行中容器的掛載點 —— 容器的根目錄是掛在主機上的，這點和虛擬機的磁碟不同。</span></div></td>
+                    <td class="yes"><span class="status-badge status-badge--supported">yes</span></td>
+                    <td class="yes"><span class="status-badge status-badge--supported">yes</span></td>
+                </tr>
+                <tr>
+                    <td><span class="lang-en">Template and linked clone</span><span class="lang-zh">範本與連結複製</span>
+                        <div class="cell-note"><span class="lang-en">Instant on QuTS hero. On QTS the same call copies, so a linked clone is as slow and as large as a full one.</span><span class="lang-zh">在 QuTS hero 上是即時的。在 QTS 上同一個呼叫是真的複製，所以連結複製跟完整複製一樣慢、一樣大。</span></div></td>
+                    <td class="yes"><span class="status-badge status-badge--supported">yes</span></td>
+                    <td class="yes"><span class="status-badge status-badge--supported">yes</span></td>
+                </tr>
+                <tr>
+                    <td><span class="lang-en">Full clone, <code>pvesm export</code> / <code>import</code>, move to another storage</span><span class="lang-zh">完整複製、<code>pvesm export</code> / <code>import</code>、搬移到其他儲存</span></td>
+                    <td class="yes"><span class="status-badge status-badge--supported">yes</span></td>
+                    <td class="yes"><span class="status-badge status-badge--supported">yes</span></td>
+                </tr>
+                <tr>
+                    <td><span class="lang-en">Migration between nodes</span><span class="lang-zh">節點間遷移</span>
+                        <div class="cell-note"><span class="lang-en">The storage is shared, so nothing moves — the destination node attaches the same LUN.</span><span class="lang-zh">這是共用儲存，所以資料不需要搬動 —— 目的節點掛載的是同一個 LUN。</span></div></td>
+                    <td class="yes"><span class="status-badge status-badge--supported">yes</span></td>
+                    <td class="yes"><span class="status-badge status-badge--supported">yes</span></td>
+                </tr>
+                <tr>
+                    <td><span class="lang-en">LIVE migration, with the guest running</span><span class="lang-zh">線上遷移（客體不停機）</span>
+                        <div class="cell-note"><span class="lang-en">Proxmox VE does not live-migrate a running container at all, on any storage. A container migrates with a restart, and on this storage that restart moves no data.</span><span class="lang-zh">Proxmox VE 在任何儲存上都不支援執行中容器的線上遷移。容器遷移需要重新啟動，而在這個儲存上，那次重啟不需要搬動任何資料。</span></div></td>
+                    <td class="yes"><span class="status-badge status-badge--supported">yes</span></td>
+                    <td class="yes"><span class="status-badge status-badge--partial">n/a</span></td>
+                </tr>
+                <tr>
+                    <td><span class="lang-en">Multipath across several NAS data ports</span><span class="lang-zh">跨多個 NAS 資料埠的多重路徑</span></td>
+                    <td class="yes"><span class="status-badge status-badge--supported">yes</span></td>
+                    <td class="yes"><span class="status-badge status-badge--supported">yes</span></td>
+                </tr>
+                <tr>
+                    <td><span class="lang-en">CHAP and mutual CHAP</span><span class="lang-zh">CHAP 與雙向 CHAP</span></td>
+                    <td class="yes"><span class="status-badge status-badge--supported">yes</span></td>
+                    <td class="yes"><span class="status-badge status-badge--supported">yes</span></td>
+                </tr>
+                <tr>
+                    <td><span class="lang-en">Read a snapshot as a device</span><span class="lang-zh">直接把快照當裝置讀取</span>
+                        <div class="cell-note"><span class="lang-en">Not possible on QTS — roll back to it, or clone it into a disk of its own. The plugin declines the capability up front rather than starting an operation and failing partway.</span><span class="lang-zh">QTS 做不到 —— 請還原，或把它複製成一顆獨立磁碟。外掛選擇一開始就表明不支援，而不是做到一半才失敗。</span></div></td>
+                    <td class="yes"><span class="status-badge status-badge--planned">no</span></td>
+                    <td class="yes"><span class="status-badge status-badge--planned">no</span></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="doc-section doc-section--accent" id="qts">
+    <h2 class="section-title"><span class="lang-en">Three things about QTS that shape what this can do</span><span class="lang-zh">QTS 的三件事決定了這個外掛能做什麼</span></h2>
+    <p class="section-subtitle">
+        <span class="lang-en">They are worth knowing before you build a cluster around them.</span>
+        <span class="lang-zh">在圍繞它們規劃叢集之前，值得先知道。</span>
+    </p>
+
+    <h3 class="subsection-title"><span class="lang-en">1. Disks are allocated in whole GiB</span><span class="lang-zh">一、磁碟以整數 GiB 配置</span></h3>
+    <p>
+        <span class="lang-en">A LUN's capacity is a whole number of GiB, with no finer step. Proxmox VE allocates in KiB, so every size is rounded <strong>up</strong>, and <code>volume_size_info</code> reports what the NAS actually has rather than what PVE asked for. A volume that reports less than the configuration claims is one QEMU refuses to start.</span>
+        <span class="lang-zh">LUN 的容量是整數 GiB，沒有更細的刻度。Proxmox VE 是以 KiB 配置，所以每個容量都會<strong>無條件進位</strong>，而且 <code>volume_size_info</code> 回報的是 NAS 上實際的大小，不是 PVE 要求的大小。回報值小於設定值的磁碟區，QEMU 會拒絕啟動。</span>
+    </p>
+    <p>
+        <span class="lang-en">A resize says so out loud rather than leaving you to notice:</span>
+        <span class="lang-zh">調整容量時會明講，而不是讓你自己發現：</span>
+    </p>
+<pre><code>storage 'qnap1': QTS allocates in whole GiB, so 'pve-qnap1-vm-100-disk-0'
+is now 12884901888 bytes rather than the 11811160064 requested.</code></pre>
+
+    <h3 class="subsection-title"><span class="lang-en">2. CHAP is the access control</span><span class="lang-zh">二、存取控制靠 CHAP</span></h3>
+    <p>
+        <span class="lang-en">This plugin does not set up per-host access lists on the target. It configures CHAP on the target's default policy and nothing narrower; restricting a LUN to named hosts is something you do yourself in the QNAP web interface.</span>
+        <span class="lang-zh">這個外掛不會在目標上設定針對個別主機的存取清單。它只在目標的預設原則上設定 CHAP，不做更細的限制；要把 LUN 限制給特定主機，請自行在 QNAP 網頁介面裡設定。</span>
+    </p>
+    <div class="alert alert--warning">
+        <span class="lang-en">So set CHAP unless the NAS is on a storage-only network. The plugin warns when you add a storage without it, and it refuses a username with no secret — an empty CHAP secret is access control that reports itself as on and protects nothing.</span>
+        <span class="lang-zh">所以除非這台 NAS 位於純儲存網路，否則請設定 CHAP。沒設定就加入儲存時，外掛會提出警告；而且它會拒絕「有帳號沒密碼」的設定 —— 空的 CHAP 密碼是一種「自稱已啟用、實際不保護任何東西」的存取控制。</span>
+    </div>
+
+    <h3 class="subsection-title"><span class="lang-en">3. A linked clone copies on QTS and does not on QuTS hero</span><span class="lang-zh">三、連結複製在 QTS 上會真的複製資料，在 QuTS hero 上不會</span></h3>
+    <p>
+        <span class="lang-en">Every clone is made from a <em>snapshot</em>. The plugin detects which firmware it is talking to and uses the right form.</span>
+        <span class="lang-zh">所有複製都是從<em>快照</em>做出來的。外掛會偵測目前面對的是哪一種韌體，並使用正確的形式。</span>
+    </p>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th></th>
+                    <th>QTS (LVM)</th>
+                    <th>QuTS hero (ZFS)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td><span class="lang-en">Snapshot / rollback</span><span class="lang-zh">快照 / 還原</span></td><td>✓</td><td>✓</td></tr>
+                <tr><td><span class="lang-en">Linked clone (<code>qm clone</code>)</span><span class="lang-zh">連結複製（<code>qm clone</code>）</span></td><td><span class="lang-en">works, but <strong>copies</strong></span><span class="lang-zh">可用，但是<strong>真的複製</strong></span></td><td><span class="lang-en"><strong>instant</strong></span><span class="lang-zh"><strong>即時</strong></span></td></tr>
+                <tr><td><span class="lang-en">Deploying from templates at scale</span><span class="lang-zh">大量從範本部署</span></td><td><span class="lang-en">slow</span><span class="lang-zh">慢</span></td><td><span class="lang-en">fast</span><span class="lang-zh">快</span></td></tr>
+            </tbody>
+        </table>
+    </div>
+    <p>
+        <span class="lang-en">If you are choosing hardware for a Proxmox VE cluster and expect to deploy from templates, this is the deciding factor. One consequence to know about on QuTS hero: an instant clone keeps the snapshot it was made from as its backing store, so the plugin leaves a snapshot on a template, and deleting a template while linked clones still exist fails — with a message that says exactly that, rather than a bare error number.</span>
+        <span class="lang-zh">如果正在選型而且預期會大量從範本部署，這一點就是決定性的差異。在 QuTS hero 上有一個後果要知道：即時複製會把來源快照當成自己的後備儲存，所以外掛會在範本上留一個快照；當還有連結複製存在時刪除範本會失敗 —— 而且訊息會明講原因，不是丟一個錯誤代碼。</span>
+    </p>
+</section>
+
+<section class="doc-section" id="os">
+    <h2 class="section-title"><span class="lang-en">Which QNAP operating systems are supported</span><span class="lang-zh">支援的 QNAP 作業系統</span></h2>
+    <p class="section-subtitle">
+        <span class="lang-en">Deliberately specific about the difference between <em>supported</em>, <em>expected to work</em> and <em>not supported</em>, because two of those are promises and one is not.</span>
+        <span class="lang-zh">刻意把<em>支援</em>、<em>應可運作</em>與<em>不支援</em>分清楚，因為其中兩個是承諾，另一個不是。</span>
+    </p>
+
+    <h3 class="subsection-title"><span class="lang-en">The hard requirement: Storage Manager V2</span><span class="lang-zh">硬性需求：Storage Manager V2</span></h3>
+    <p>
+        <span class="lang-en">QNAP has two generations of Storage Manager and they are <strong>different sets of CGI calls</strong>, not two versions of one API. This plugin implements V2 only, and the firmware says which it has — so a firmware that is too old is refused at <code>pvesm add</code>, with its version in the message, instead of adding cleanly and then listing nothing.</span>
+        <span class="lang-zh">QNAP 有兩代 Storage Manager，它們是<strong>兩套不同的 CGI 呼叫</strong>，不是同一套 API 的兩個版本。這個外掛只實作 V2，而韌體本身會回報自己是哪一種 —— 所以太舊的韌體會在 <code>pvesm add</code> 當下被拒絕，訊息裡帶著版本號，而不是加得進去、之後卻列不出任何東西。</span>
+    </p>
+
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th><code>&lt;storage_v2&gt;</code></th>
+                    <th><code>&lt;is_zfs&gt;</code></th>
+                    <th><span class="lang-en">What it is</span><span class="lang-zh">代表什麼</span></th>
+                    <th><span class="lang-en">This plugin</span><span class="lang-zh">本外掛</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td><span class="lang-en">absent, or 0</span><span class="lang-zh">不存在，或 0</span></td><td>—</td><td><span class="lang-en">Legacy Storage Manager</span><span class="lang-zh">舊版 Storage Manager</span></td><td><span class="status-badge status-badge--planned"><span class="lang-en">refused</span><span class="lang-zh">拒絕</span></span></td></tr>
+                <tr><td>1</td><td>0</td><td><span class="lang-en">Storage Manager V2 on LVM — QTS</span><span class="lang-zh">LVM 上的 Storage Manager V2 —— QTS</span></td><td><span class="status-badge status-badge--supported"><span class="lang-en">supported</span><span class="lang-zh">支援</span></span></td></tr>
+                <tr><td>1</td><td>1</td><td><span class="lang-en">ZFS — QuTS hero</span><span class="lang-zh">ZFS —— QuTS hero</span></td><td><span class="status-badge status-badge--supported"><span class="lang-en">supported, instant clones</span><span class="lang-zh">支援，且有即時複製</span></span></td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <h3 class="subsection-title"><span class="lang-en">The matrix</span><span class="lang-zh">支援對照表</span></h3>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th><span class="lang-en">Operating system</span><span class="lang-zh">作業系統</span></th>
+                    <th><span class="lang-en">Version</span><span class="lang-zh">版本</span></th>
+                    <th><span class="lang-en">Status</span><span class="lang-zh">狀態</span></th>
+                    <th><span class="lang-en">Notes</span><span class="lang-zh">說明</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>QTS</strong></td><td><strong>5.1.x</strong></td>
+                    <td><span class="status-badge status-badge--supported"><span class="lang-en">supported</span><span class="lang-zh">支援</span></span></td>
+                    <td><span class="lang-en">The firmware generation this plugin is written for</span><span class="lang-zh">這個外掛撰寫時所針對的韌體世代</span></td>
+                </tr>
+                <tr>
+                    <td>QTS</td><td>5.2.x</td>
+                    <td><span class="status-badge status-badge--partial"><span class="lang-en">expected</span><span class="lang-zh">應可運作</span></span></td>
+                    <td><span class="lang-en">Same API family; not verified</span><span class="lang-zh">同一套 API；未驗證</span></td>
+                </tr>
+                <tr>
+                    <td>QTS</td><td>4.5.1 – 5.0.x</td>
+                    <td><span class="status-badge status-badge--partial"><span class="lang-en">expected</span><span class="lang-zh">應可運作</span></span></td>
+                    <td><span class="lang-en">The first release with <code>storage_v2</code>; not verified</span><span class="lang-zh"><code>storage_v2</code> 的起始版本；未驗證</span></td>
+                </tr>
+                <tr>
+                    <td>QTS</td><td><span class="lang-en">4.5.0 and older</span><span class="lang-zh">4.5.0 以下</span></td>
+                    <td><span class="status-badge status-badge--planned"><span class="lang-en">not supported</span><span class="lang-zh">不支援</span></span></td>
+                    <td><span class="lang-en">Legacy Storage Manager. Refused at <code>pvesm add</code>.</span><span class="lang-zh">舊版 Storage Manager。<code>pvesm add</code> 會直接拒絕。</span></td>
+                </tr>
+                <tr>
+                    <td><strong>QuTS hero</strong></td><td><strong>h5.1.x</strong></td>
+                    <td><span class="status-badge status-badge--supported"><span class="lang-en">supported</span><span class="lang-zh">支援</span></span></td>
+                    <td><span class="lang-en">ZFS. Instant clones, so a linked clone is instant.</span><span class="lang-zh">ZFS。有即時複製，所以連結複製是瞬間完成的。</span></td>
+                </tr>
+                <tr>
+                    <td>QuTS hero</td><td>h5.2.x</td>
+                    <td><span class="status-badge status-badge--partial"><span class="lang-en">expected</span><span class="lang-zh">應可運作</span></span></td>
+                    <td><span class="lang-en">Not verified</span><span class="lang-zh">未驗證</span></td>
+                </tr>
+                <tr>
+                    <td>QuTS hero</td><td>h4.5.x – h5.0.x</td>
+                    <td><span class="status-badge status-badge--partial"><span class="lang-en">expected</span><span class="lang-zh">應可運作</span></span></td>
+                    <td><span class="lang-en">Not verified</span><span class="lang-zh">未驗證</span></td>
+                </tr>
+                <tr>
+                    <td>QuTScloud</td><td><span class="lang-en">any</span><span class="lang-zh">任何版本</span></td>
+                    <td><span class="status-badge status-badge--planned"><span class="lang-en">not supported</span><span class="lang-zh">不支援</span></span></td>
+                    <td><span class="lang-en">A cloud image with no local storage pools of this shape</span><span class="lang-zh">雲端映像，沒有這種形式的本機儲存池</span></td>
+                </tr>
+                <tr>
+                    <td>QNE Network OS</td><td><span class="lang-en">any</span><span class="lang-zh">任何版本</span></td>
+                    <td><span class="status-badge status-badge--planned"><span class="lang-en">not supported</span><span class="lang-zh">不支援</span></span></td>
+                    <td><span class="lang-en">A different product; it has no Storage Manager</span><span class="lang-zh">不同的產品線；沒有 Storage Manager</span></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    <p class="muted">
+        <span class="lang-en">"Expected to work" means nothing in what this plugin uses is known to differ — not that anyone has run it. Treat it as you would any untested combination.</span>
+        <span class="lang-zh">「應可運作」的意思是：這個外掛用到的部分沒有已知的差異 —— 不代表有人真的跑過。請當成任何未測試的組合來看待。</span>
+    </p>
+
+    <h3 class="subsection-title"><span class="lang-en">Model requirements, which are not the same as firmware</span><span class="lang-zh">機型需求，這和韌體版本是兩回事</span></h3>
+    <ul>
+        <li><span class="lang-en"><strong>The iSCSI target service.</strong> Every NAS in scope has it, but it ships <strong>off</strong>. The plugin refuses to add a storage while it is off and says so.</span><span class="lang-zh"><strong>iSCSI 目標服務。</strong>範圍內的 NAS 都有，但出廠是<strong>關閉</strong>的。服務關閉時外掛會拒絕加入儲存，並說明原因。</span></li>
+        <li><span class="lang-en"><strong>A storage pool.</strong> This plugin creates block-based LUNs, which live in a pool. A NAS whose disks are configured as static volumes has no pool for them.</span><span class="lang-zh"><strong>儲存池。</strong>這個外掛建立的是區塊型 LUN，必須放在儲存池裡。磁碟被設定成靜態磁碟區的 NAS 沒有可用的儲存池。</span></li>
+        <li><span class="lang-en"><strong>Snapshots.</strong> QNAP's entry-level models do not support snapshots of iSCSI LUNs at all, and <strong>this plugin has no way to check that in advance</strong>. It warns when the storage is added and asks you to take one snapshot of a test disk before relying on the feature.</span><span class="lang-zh"><strong>快照。</strong>QNAP 入門機型完全不支援 iSCSI LUN 快照，而且<strong>外掛沒有辦法事先檢查</strong>。加入儲存時它會提出警告，請你先對一顆測試磁碟做一次快照再依賴這個功能。</span></li>
+    </ul>
+</section>
+
+<section class="doc-section" id="limits">
+    <h2 class="section-title"><span class="lang-en">The real ceiling is the LUN count</span><span class="lang-zh">真正的上限是 LUN 數量</span></h2>
+    <p>
+        <span class="lang-en">One VM disk is one LUN, and a NAS has a maximum number of them — <strong>per model</strong>. The plugin reads it from the NAS rather than assuming, warns as it approaches, and refuses an allocation at the limit with a message that says free space will not help.</span>
+        <span class="lang-zh">一顆虛擬機磁碟就是一個 LUN，而每台 NAS 能有的 LUN 數量有上限，<strong>且因機型而異</strong>。外掛會向 NAS 讀取這個數字而不是自己假設，接近上限時提出警告，到達上限時拒絕配置，並且明白說出「增加空間沒有用」。</span>
+    </p>
+<pre><code>storage 'qnap1': the NAS already holds 256 LUNs, which is this model's
+maximum (256). Free space is not the problem and adding capacity will not
+help — delete LUNs, or use a second NAS. The count includes LUNs this
+storage does not own, such as Virtual Machine Manager disks.</code></pre>
+    <div class="alert alert--info">
+        <span class="lang-en">This is the number to check before you plan a cluster, and Proxmox VE has no way to express it — <code>pvesm status</code> would happily go on showing terabytes free on a NAS that cannot create another disk. <code>pve-qnap-api-probe</code> prints it.</span>
+        <span class="lang-zh">規劃叢集之前該確認的就是這個數字，而 Proxmox VE 沒有辦法表達它 —— 一台已經無法再建立磁碟的 NAS，<code>pvesm status</code> 還是會顯示剩下好幾 TB。<code>pve-qnap-api-probe</code> 會印出這個數字。</span>
+    </div>
+</section>
+
+<section class="doc-section" id="requirements">
+    <h2 class="section-title"><span class="lang-en">Requirements</span><span class="lang-zh">系統需求</span></h2>
+    <div class="table-wrap">
+        <table>
+            <tbody>
+                <tr><td>Proxmox VE</td><td><span class="lang-en">8.0 or later, on <strong>every node</strong></span><span class="lang-zh">8.0 以上，<strong>每個節點都要裝</strong></span></td></tr>
+                <tr><td><span class="lang-en">QNAP firmware</span><span class="lang-zh">QNAP 韌體</span></td><td><span class="lang-en">QTS 4.5.1+ or any QuTS hero — see above</span><span class="lang-zh">QTS 4.5.1 以上，或任何 QuTS hero —— 見上表</span></td></tr>
+                <tr><td><span class="lang-en">On the NAS</span><span class="lang-zh">NAS 上</span></td><td><span class="lang-en">the iSCSI target service <strong>on</strong>, and a storage pool</span><span class="lang-zh">iSCSI 目標服務要<strong>開啟</strong>，並且要有儲存池</span></td></tr>
+                <tr><td><span class="lang-en">Account</span><span class="lang-zh">帳號</span></td><td><span class="lang-en">an <strong>administrator</strong>, without 2-step verification</span><span class="lang-zh"><strong>管理員</strong>，且未啟用兩步驟驗證</span></td></tr>
+                <tr><td><span class="lang-en">On each node</span><span class="lang-zh">每個節點</span></td><td><code>open-iscsi</code>, <code>multipath-tools</code></td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="doc-section" id="account">
+    <h2 class="section-title"><span class="lang-en">The NAS account, and where the password lives</span><span class="lang-zh">NAS 帳號，以及密碼放在哪裡</span></h2>
+
+    <h3 class="subsection-title"><span class="lang-en">It has to be an administrator</span><span class="lang-zh">必須是管理員帳號</span></h3>
+    <p>
+        <span class="lang-en">The CGIs this plugin calls are administrator-only in QTS. A standard user, or one with delegated permissions on a shared folder, gets a session that logs in perfectly well and then has every one of those calls refused. Use a <em>second</em> administrator account created for this purpose rather than <code>admin</code>: it can be disabled without locking anyone out, and the NAS's own logs then show which actions were Proxmox VE's.</span>
+        <span class="lang-zh">這個外掛呼叫的 CGI 在 QTS 裡都是管理員專用。一般使用者、或只有共用資料夾授權的使用者，登入會完全成功，然後每一個呼叫都被拒絕。請另外建一個專用的管理員帳號，不要用 <code>admin</code>：需要時可以停用而不影響其他人，而且 NAS 自己的記錄就能分辨哪些動作是 Proxmox VE 做的。</span>
+    </p>
+    <div class="alert alert--warning">
+        <span class="lang-en"><strong>Two-factor authentication must be off for this account.</strong> This plugin logs in with a username and a password only; it does not implement 2-step verification. That is a reason to give this account its own long password and leave 2FA on for the human accounts.</span>
+        <span class="lang-zh"><strong>這個帳號必須關閉兩步驟驗證。</strong>這個外掛只用帳號與密碼登入，沒有實作兩步驟驗證。這也正是應該給這個帳號一組專屬長密碼、並讓人用的帳號保持啟用 2FA 的理由。</span>
+    </div>
+
+    <h3 class="subsection-title"><span class="lang-en">Not in storage.cfg</span><span class="lang-zh">密碼不會寫進 storage.cfg</span></h3>
+    <p>
+        <span class="lang-en"><code>/etc/pve/storage.cfg</code> is <code>root:www-data 0640</code>, and PVE returns any property it does not know is a secret from <code>GET /storage/&lt;id&gt;</code> to any user holding <code>Datastore.Audit</code> — a read-only auditor would have been handed an administrator credential for your NAS. The plugin declares its three secrets as sensitive, so PVE strips them from the configuration, and they are written to <code>/etc/pve/priv/storage/&lt;storeid&gt;.qnap</code>: root only, and replicated to every node.</span>
+        <span class="lang-zh"><code>/etc/pve/storage.cfg</code> 的權限是 <code>root:www-data 0640</code>，而且 PVE 會把它不知道是機密的欄位，透過 <code>GET /storage/&lt;id&gt;</code> 回傳給任何具有 <code>Datastore.Audit</code> 權限的使用者 —— 一個唯讀稽核者就會拿到你 NAS 的管理員憑證。這個外掛把三個機密欄位宣告為 sensitive，PVE 就會把它們從設定檔剝除，改寫到 <code>/etc/pve/priv/storage/&lt;storeid&gt;.qnap</code>：只有 root 能讀，並且會同步到每個節點。</span>
+    </p>
+
+    <h3 class="subsection-title"><span class="lang-en">A wrong password locks the node out, once</span><span class="lang-zh">密碼錯誤只會鎖一次</span></h3>
+    <p>
+        <span class="lang-en">QTS blocks a source address after a few failed logins. Proxmox VE polls every storage every ten seconds on every node, so a wrong password would reach that threshold in well under a minute — and the symptom afterwards is a refused connection, which looks like a dead NAS rather than a bad credential. The plugin therefore <strong>latches</strong> a refused credential: one failed attempt, recorded under <code>/run/</code>, and no retry until the storage configuration changes. Any <code>pvesm set</code> clears it.</span>
+        <span class="lang-zh">QTS 會在數次登入失敗後封鎖來源位址。Proxmox VE 每十秒、每個節點都會輪詢每個儲存，所以密碼錯誤不到一分鐘就會達到門檻 —— 而之後的症狀是連線被拒，看起來像 NAS 掛了，而不是密碼錯了。因此外掛會把被拒絕的憑證<strong>閂鎖</strong>起來：只嘗試一次、記錄在 <code>/run/</code> 底下，在儲存設定改變之前不再重試。任何一次 <code>pvesm set</code> 都會解除。</span>
+    </p>
+</section>
+
+<section class="doc-section" id="install">
+    <h2 class="section-title"><span class="lang-en">Installing</span><span class="lang-zh">安裝</span></h2>
+    <p>
+        <span class="lang-en">On <strong>every node</strong> of the cluster:</span>
+        <span class="lang-zh">在叢集的<strong>每一個節點</strong>上執行：</span>
+    </p>
+<pre><code># on each node — the two packages PVE does not install for you
+apt update
+apt install -y open-iscsi multipath-tools
+
+cd /tmp
+# no version in the filename: this URL always gives you the newest release
+wget -O jt-pve-storage-qnap_all.deb \
+  https://github.com/jasoncheng7115/jt-pve-storage-qnap/releases/latest/download/jt-pve-storage-qnap_all.deb
+apt install -y ./jt-pve-storage-qnap_all.deb
+systemctl restart pvedaemon pveproxy pvestatd
+
+dpkg -l jt-pve-storage-qnap | awk '/^ii/{print $3}'    # check what you got</code></pre>
+    <p>
+        <span class="lang-en"><strong>The <code>-O</code> is not decoration.</strong> Without it, <code>wget</code> refuses to overwrite a file that is already there and saves the download under another name — then <code>apt</code> installs the <strong>old</strong> file sitting in <code>/tmp</code> from last time. If there is no release to download yet, build the package from the repository with <code>make deb</code>.</span>
+        <span class="lang-zh"><strong><code>-O</code> 不是裝飾。</strong>少了它，<code>wget</code> 不會覆寫已經存在的檔案，而是另存成別的檔名 —— 接著 <code>apt</code> 裝的就是上次留在 <code>/tmp</code> 的<strong>舊檔</strong>。如果還沒有可下載的版本，可以從 repository 用 <code>make deb</code> 自行打包。</span>
+    </p>
+    <p>
+        <span class="lang-en"><strong>Every node in the cluster, including the one you browse from</strong>, and keep them on the same version. A storage operation runs on the node that owns the guest, and a node <em>without</em> the plugin makes the storage invisible in the web interface rather than reporting an error.</span>
+        <span class="lang-zh"><strong>叢集的每個節點都要裝，包含你用來開網頁介面的那一台</strong>，而且版本要一致。儲存操作是在擁有該客體的節點上執行的；<em>沒裝</em>外掛的節點不會回報錯誤，而是讓這個儲存在網頁介面裡消失。</span>
+    </p>
+    <div class="alert alert--info">
+        <span class="lang-en"><code>apt install ./file.deb</code>, not <code>dpkg -i</code>: the latter does not resolve dependencies and leaves the package unconfigured on a node without <code>multipath-tools</code>.</span>
+        <span class="lang-zh">請用 <code>apt install ./檔案.deb</code>，不要用 <code>dpkg -i</code>：後者不會處理相依套件，在沒有 <code>multipath-tools</code> 的節點上會留下一個未設定完成的套件。</span>
+    </div>
+</section>
+
+<section class="doc-section" id="configure">
+    <h2 class="section-title"><span class="lang-en">Adding the storage</span><span class="lang-zh">新增 Storage</span></h2>
+    <p>
+        <span class="lang-en">Every precondition is checked here — the firmware generation, the iSCSI service, the pool, the account — so a configuration that cannot work is refused now rather than at the first allocation.</span>
+        <span class="lang-zh">所有前置條件都在這一步檢查 —— 韌體世代、iSCSI 服務、儲存池、帳號 —— 所以不可能運作的設定會在此刻被拒絕，而不是等到第一次配置磁碟才發現。</span>
+    </p>
+<pre><code>pvesm add qnapsan qnap1 \
+    --qnap-portal 192.0.2.10 \
+    --qnap-username pve \
+    --qnap-password '&lt;password&gt;' \
+    --qnap-pool 1 \
+    --qnap-chap-username pve \
+    --qnap-chap-password '&lt;secret&gt;' \
+    --qnap-ssl-verify 0 \
+    --content images</code></pre>
+    <p>
+        <span class="lang-en">Then use it like any other storage: <code>qm create --scsi0 qnap1:32</code>, snapshots, rollback, templates, linked clones, live migration.</span>
+        <span class="lang-zh">之後就跟其他儲存一樣使用：<code>qm create --scsi0 qnap1:32</code>、快照、還原、範本、連結複製、線上遷移。</span>
+    </p>
+</section>
+
+<section class="doc-section" id="probe">
+    <h2 class="section-title"><span class="lang-en">The discovery tool</span><span class="lang-zh">探索工具</span></h2>
+    <p>
+        <span class="lang-en">Run this <strong>before</strong> you add anything. It is read only — every call it makes is a query or the login itself — so it is safe against a production NAS, and it is the first thing to run when a storage will not add or a device will not appear.</span>
+        <span class="lang-zh">加入任何東西<strong>之前</strong>先跑這個。它是唯讀的 —— 每個呼叫不是查詢就是登入本身 —— 所以對正式環境的 NAS 是安全的；當儲存加不進去、或裝置出不來時，這也是第一個該跑的東西。</span>
+    </p>
+<pre><code>pve-qnap-api-probe --host 192.0.2.10 --user admin --insecure --node</code></pre>
+    <p>
+        <span class="lang-en">It prints the model, the firmware, whether it is QTS or QuTS hero, the LUN and target ceilings, the storage pools with their free space, and — with <code>--node</code> — what this node has installed and which sessions it holds. The password is read from the terminal rather than taken as an argument, so it stays out of the shell history and out of <code>ps</code>.</span>
+        <span class="lang-zh">它會印出機型、韌體、是 QTS 還是 QuTS hero、LUN 與目標的數量上限、各儲存池與其剩餘空間；加上 <code>--node</code> 還會印出這個節點裝了哪些工具、持有哪些工作階段。密碼是從終端機讀取而不是當參數傳入，所以不會留在 shell 歷史裡，也不會出現在 <code>ps</code> 中。</span>
+    </p>
+</section>
+
+<section class="doc-section" id="reap">
+    <h2 class="section-title"><span class="lang-en">The cleanup tool</span><span class="lang-zh">清理工具</span></h2>
+    <p>
+        <span class="lang-en">Proxmox VE never tells the <em>source</em> node that a shared volume is no longer needed there — its only <code>deactivate_volumes</code> call is inside the local-volume path. So a node a VM was migrated away from keeps a multipath map for a LUN it no longer uses, and if the VM was later destroyed elsewhere, for a LUN that no longer exists.</span>
+        <span class="lang-zh">Proxmox VE 不會通知<em>來源節點</em>「這個共用磁碟區在這裡已經不需要了」—— 它唯一一次呼叫 <code>deactivate_volumes</code> 是在處理本機磁碟區的路徑裡。所以被遷離的節點會留著一個已經用不到的 multipath map；如果那台虛擬機之後又在別的節點被刪除，留下的就是一個指向已不存在 LUN 的 map。</span>
+    </p>
+<pre><code>pve-qnap-reap --all             # report only
+pve-qnap-reap --all --remove    # act</code></pre>
+    <p>
+        <span class="lang-en">It never touches a device that is in use, and it <strong>refuses rather than guessing</strong> when it cannot tell — a check that cannot answer must not answer "safe".</span>
+        <span class="lang-zh">它絕不會動到正在使用中的裝置，而且在無法確認狀態時<strong>拒絕動作而不是用猜的</strong> —— 一個答不出來的檢查，不可以回答「安全」。</span>
+    </p>
+</section>
+
+<section class="doc-section" id="trouble">
+    <h2 class="section-title"><span class="lang-en">When something goes wrong</span><span class="lang-zh">故障處理</span></h2>
+
+    <h3 class="subsection-title"><span class="lang-en">The storage will not add</span><span class="lang-zh">儲存加不進去</span></h3>
+    <ul>
+        <li><span class="lang-en">Run the probe first. It separates "the NAS refused the account" from "the firmware is too old" from "the iSCSI service is off", and those three look identical from <code>pvesm add</code>.</span><span class="lang-zh">先跑探索工具。它能分辨「NAS 拒絕帳號」、「韌體太舊」與「iSCSI 服務沒開」，而這三種從 <code>pvesm add</code> 看起來一模一樣。</span></li>
+        <li><span class="lang-en">If the probe succeeded and <code>pvesm add</code> reports a login failure, suspect the POST question in <a href="https://github.com/jasoncheng7115/jt-pve-storage-qnap/blob/main/docs/TESTING.md">TESTING.md</a>.</span><span class="lang-zh">如果探索工具成功、<code>pvesm add</code> 卻回報登入失敗，請先懷疑 <a href="https://github.com/jasoncheng7115/jt-pve-storage-qnap/blob/main/docs/TESTING.md">TESTING.md</a> 裡關於 POST 的那一項。</span></li>
+    </ul>
+
+    <h3 class="subsection-title"><span class="lang-en">A second node cannot log in to the target</span><span class="lang-zh">第二個節點無法登入目標</span></h3>
+    <p>
+        <span class="lang-en">QTS's clustered-access flag is what admits more than one initiator, and <code>targetInfo</code> <strong>does not return it</strong> — so there is nothing for the plugin to compare against on the activation path. It is written when the target is created and re-applied on every <code>pvesm set</code>. If a node is refused, run:</span>
+        <span class="lang-zh">QTS 的叢集存取旗標決定了能不能讓多個 initiator 同時連入，而 <code>targetInfo</code> <strong>不會回傳它</strong> —— 所以外掛在啟用路徑上沒有東西可以比對。它會在建立目標時寫入，並在每次 <code>pvesm set</code> 時重新套用。如果有節點被拒絕，請執行：</span>
+    </p>
+<pre><code>pvesm set qnap1</code></pre>
+
+    <h3 class="subsection-title"><span class="lang-en">A device does not appear on a node</span><span class="lang-zh">節點上出不來裝置</span></h3>
+    <ul>
+        <li><span class="lang-en">Check <code>find_multipaths</code> in <code>/etc/multipath.conf</code>. With the default, <code>strict</code>, no device gets a map until its WWID is listed in <code>/etc/multipath/wwids</code>, however many paths it has. With <code>yes</code>, a single-path device gets no map at all — and a QNAP with one data address is the common case, not the exception. The plugin handles both with <code>multipath -a</code>, but the message tells you where to look if that did not work.</span><span class="lang-zh">檢查 <code>/etc/multipath.conf</code> 裡的 <code>find_multipaths</code>。預設值 <code>strict</code> 之下，WWID 沒有列在 <code>/etc/multipath/wwids</code> 的裝置不論有幾條路徑都不會產生 map。設成 <code>yes</code> 時，單路徑裝置根本不會產生 map —— 而只有一個資料位址的 QNAP 是常態而不是例外。這兩種情況外掛都會用 <code>multipath -a</code> 處理，但如果沒成功，訊息會告訴你該看哪裡。</span></li>
+        <li><span class="lang-en">Check <code>cat /sys/block/sdX/device/vendor</code>. If it is not <code>QNAP</code>, the multipath drop-in this plugin writes does not apply to your model — please report it.</span><span class="lang-zh">檢查 <code>cat /sys/block/sdX/device/vendor</code>。如果不是 <code>QNAP</code>，外掛寫入的 multipath 設定就不會套用到你的機型 —— 請回報。</span></li>
+    </ul>
+</section>
+
+<section class="doc-section" id="options">
+    <h2 class="section-title"><span class="lang-en">Options</span><span class="lang-zh">設定選項</span></h2>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th><span class="lang-en">Option</span><span class="lang-zh">選項</span></th>
+                    <th><span class="lang-en">Default</span><span class="lang-zh">預設值</span></th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td><code>qnap-portal</code></td><td>—</td><td><span class="lang-en">management address; a comma-separated list is tried in order</span><span class="lang-zh">管理位址；可用逗號分隔多個，依序嘗試</span></td></tr>
+                <tr><td><code>qnap-port</code></td><td><code>443</code></td><td><span class="lang-en">QTS's HTTP admin port is usually 8080</span><span class="lang-zh">QTS 的 HTTP 管理埠通常是 8080</span></td></tr>
+                <tr><td><code>qnap-scheme</code></td><td><code>https</code></td><td><span class="lang-en"><code>http</code> puts the password on the wire in clear</span><span class="lang-zh">用 <code>http</code> 會讓密碼以明文在網路上傳輸</span></td></tr>
+                <tr><td><code>qnap-username</code></td><td>—</td><td><span class="lang-en">must be an administrator</span><span class="lang-zh">必須是管理員</span></td></tr>
+                <tr><td><code>qnap-password</code></td><td>—</td><td><span class="lang-en">kept in <code>/etc/pve/priv</code>, never in <code>storage.cfg</code></span><span class="lang-zh">存放於 <code>/etc/pve/priv</code>，不會寫進 <code>storage.cfg</code></span></td></tr>
+                <tr><td><code>qnap-pool</code></td><td>—</td><td><span class="lang-en">the pool number Storage &amp; Snapshots shows</span><span class="lang-zh">「儲存與快照總管」顯示的儲存池編號</span></td></tr>
+                <tr><td><code>qnap-target-mode</code></td><td><code>shared</code></td><td><span class="lang-en">or <code>per-volume</code>, which costs a target per disk</span><span class="lang-zh">或 <code>per-volume</code>，每顆磁碟各佔用一個目標</span></td></tr>
+                <tr><td><code>qnap-chap-username</code> / <code>-password</code></td><td>—</td><td><span class="lang-en">the access control this plugin relies on</span><span class="lang-zh">這個外掛所依賴的存取控制</span></td></tr>
+                <tr><td><code>qnap-mutual-chap-username</code> / <code>-password</code></td><td>—</td><td><span class="lang-en">authenticates the NAS to the node</span><span class="lang-zh">讓 NAS 對節點驗證自己</span></td></tr>
+                <tr><td><code>qnap-ssl-verify</code></td><td><code>0</code></td><td><span class="lang-en">QTS ships a self-signed certificate</span><span class="lang-zh">QTS 出廠是自簽憑證</span></td></tr>
+                <tr><td><code>qnap-data-portals</code></td><td><span class="lang-en">management address</span><span class="lang-zh">管理位址</span></td><td><span class="lang-en">iSCSI data addresses, comma-separated</span><span class="lang-zh">iSCSI 資料位址，逗號分隔</span></td></tr>
+                <tr><td><code>qnap-min-free</code></td><td><code>10</code></td><td><span class="lang-en">refuse to allocate below this many GiB free in the pool</span><span class="lang-zh">儲存池剩餘空間低於這個 GiB 數就拒絕配置</span></td></tr>
+                <tr><td><code>qnap-no-path-retry</code></td><td><code>18</code></td><td><span class="lang-en">multipath; a number, never <code>queue</code></span><span class="lang-zh">multipath 用；一定是數字，絕不用 <code>queue</code></span></td></tr>
+                <tr><td><code>qnap-sector-size</code></td><td><code>512</code></td><td><span class="lang-en">or <code>4096</code>; some guests will not boot from 4Kn</span><span class="lang-zh">或 <code>4096</code>；部分客體作業系統無法從 4Kn 開機</span></td></tr>
+                <tr><td><code>qnap-thin</code></td><td><code>1</code></td><td><span class="lang-en">a thick LUN reserves its whole capacity at creation</span><span class="lang-zh">厚配置的 LUN 建立時就佔滿整個容量</span></td></tr>
+                <tr><td><code>qnap-status-timeout</code></td><td><code>5</code></td><td><span class="lang-en">seconds, for the health path</span><span class="lang-zh">秒，健康檢查用</span></td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="doc-section doc-section--accent" id="contribute">
+    <h2 class="section-title"><span class="lang-en">How to help this project</span><span class="lang-zh">如何協助這個專案</span></h2>
+
+    <p class="section-subtitle">
+        <span class="lang-en">What this project needs is not code. It is a QNAP NAS that somebody is willing to run it against, because none of it has met one.</span>
+        <span class="lang-zh">這個專案缺的不是程式，是一台願意拿來跑它的 QNAP NAS —— 因為它還沒有碰過任何一台。</span>
+    </p>
+
+    <ul>
+        <li><span class="lang-en"><strong>Run the discovery tool.</strong> It only reads: it creates nothing, deletes nothing, and prints the model, the firmware and the limits your NAS reports.</span><span class="lang-zh"><strong>跑一次探索工具。</strong>它只讀取，不建立也不刪除任何東西，並印出你的 NAS 回報的機型、韌體與數量上限。</span></li>
+        <li><span class="lang-en"><strong>Work through the first run in TESTING.md</strong> on a spare NAS or a pool you are willing to lose, and report what happened at each step — including the steps that simply worked.</span><span class="lang-zh"><strong>在一台備用 NAS、或一個你願意失去的儲存池上，照 TESTING.md 的第一次上機步驟跑一遍</strong>，並回報每一步的結果 —— 包含那些單純成功的步驟。</span></li>
+        <li><span class="lang-en"><strong>Anything that contradicts this page.</strong> That means something written here is wrong, which is worth more than a feature request.</span><span class="lang-zh"><strong>任何與本頁矛盾的地方。</strong>那代表這裡寫的某句話是錯的，而那比一個功能請求有價值。</span></li>
+    </ul>
+
+    <p>
+        <a href="https://github.com/jasoncheng7115/jt-pve-storage-qnap/issues" class="btn btn--primary" target="_blank" rel="noopener"><span class="lang-en">Open an issue on GitHub</span><span class="lang-zh">到 GitHub 開一個 issue</span></a>
+    </p>
+
+    <h3 class="subsection-title"><span class="lang-en">Before you send code</span><span class="lang-zh">送程式碼之前</span></h3>
+    <p>
+        <span class="lang-en"><strong>The set of QNAP API calls this plugin makes is fixed.</strong> <code>t/07-api-scope.t</code> lists every one and fails when the source makes a call that is not on the list. A change that needs a new call is welcome as an issue first; do not add it to the list to make the test pass.</span>
+        <span class="lang-zh"><strong>這個外掛呼叫的 QNAP API 是固定的一組。</strong><code>t/07-api-scope.t</code> 列出了每一個，原始碼只要多出一個不在清單上的呼叫，測試就會失敗。需要新增呼叫的修改，請先開 issue，不要為了讓測試通過而直接把它加進清單。</span>
+    </p>
+
+    <h3 class="subsection-title"><span class="lang-en">Licence, and what this project is not</span><span class="lang-zh">授權，以及這個專案不是什麼</span></h3>
+    <p>
+        <span class="lang-en">MIT. The licence covers this plugin's own code. It does not extend to QNAP's API documentation, software, firmware or trademarks, none of which are part of the repository.</span>
+        <span class="lang-zh">MIT。授權範圍是這個外掛自己的程式碼，不包含 QNAP 的 API 文件、軟體、韌體或商標 —— 這些都不在 repository 裡。</span>
+    </p>
+    <div class="alert alert--info">
+        <span class="lang-en"><strong>This is an independent project. It is not developed, certified, endorsed or maintained by QNAP Systems, Inc.</strong>, and QNAP gives no warranty for it. QNAP, QTS and QuTS hero are trademarks of QNAP Systems, Inc.</span>
+        <span class="lang-zh"><strong>這是獨立專案，不是由威聯通科技（QNAP Systems, Inc.）開發、認證、背書或維護</strong>，QNAP 也不為它提供任何保證。QNAP、QTS 與 QuTS hero 為 QNAP Systems, Inc. 的商標。</span>
+    </div>
+</section>
+
+<section class="doc-section" id="related">
+    <h2 class="section-title"><span class="lang-en">Related projects</span><span class="lang-zh">相關專案</span></h2>
+    <p class="section-subtitle">
+        <span class="lang-en">Proxmox VE storage plugins for other arrays, sharing the host-side layer and the operational rules this one inherits.</span>
+        <span class="lang-zh">其他儲存伺服器的 Proxmox VE 儲存外掛，與本專案共用主機端的架構與它承襲的維運規則。</span>
+    </p>
+
+    <div class="card-grid">
+        <a class="card" href="https://github.com/jasoncheng7115/jt-pve-storage-synology" target="_blank" rel="noopener">
+            <div class="card__icon">SY</div>
+            <div class="card__title">jt-pve-storage-synology</div>
+            <div class="card__desc">Synology NAS</div>
+        </a>
+        <a class="card" href="https://github.com/jasoncheng7115/jt-pve-storage-dellemc" target="_blank" rel="noopener">
+            <div class="card__icon">DE</div>
+            <div class="card__title">jt-pve-storage-dellemc</div>
+            <div class="card__desc">PowerStore · PowerVault ME · PowerFlex · Unity XT</div>
+        </a>
+        <a class="card" href="https://github.com/jasoncheng7115/jt-pve-storage-netapp" target="_blank" rel="noopener">
+            <div class="card__icon">NA</div>
+            <div class="card__title">jt-pve-storage-netapp</div>
+            <div class="card__desc">NetApp ONTAP</div>
+        </a>
+        <a class="card" href="https://github.com/jasoncheng7115/jt-pve-storage-purestorage" target="_blank" rel="noopener">
+            <div class="card__icon">PS</div>
+            <div class="card__title">jt-pve-storage-purestorage</div>
+            <div class="card__desc">Pure Storage FlashArray</div>
+        </a>
+    </div>
+</section>
+
+<footer class="footer">
+    <div class="footer__inner">
+        <div class="footer__center">
+            <p>jt-pve-storage-qnap &middot; MIT &middot; Jason Cheng (Jason Tools)</p>
+            <p class="muted">
+                <span class="lang-en">An independent project. Not developed, certified, endorsed or maintained by QNAP Systems, Inc. QNAP, QTS and QuTS hero are trademarks of QNAP Systems, Inc.</span>
+                <span class="lang-zh">獨立專案，不是由威聯通科技（QNAP Systems, Inc.）開發、認證、背書或維護。QNAP、QTS 與 QuTS hero 為 QNAP Systems, Inc. 的商標。</span>
+            </p>
+        </div>
+    </div>
+</footer>
+
+</main>
+
+<script>
+// Switching language. Both languages ship in the page, so the switch is an
+// attribute on <html> and needs no reload — but the URL changes with it, which
+// is what makes a language shareable. pushState rather than replaceState, so
+// the back button returns to the language the reader came from.
+//
+// The choice is ALWAYS written into the URL, English included. A clean URL
+// means "detect", so a reader with a Chinese browser who switched to English
+// and got a clean URL would be detected straight back into Chinese on reload.
+function applyLang(lang) {
+    var html = document.documentElement;
+    html.setAttribute('data-lang', lang);
+    html.setAttribute('lang', lang === 'zh' ? 'zh-Hant' : 'en');
+}
+
+// What is on screen now, which is not always what the URL says: with no
+// parameter it came from the browser.
+function currentLang() {
+    return document.documentElement.getAttribute('data-lang') === 'zh' ? 'zh' : 'en';
+}
+
+function toggleLang() {
+    var next = currentLang() === 'en' ? 'zh' : 'en';
+    var url = new URL(location.href);
+    url.searchParams.set('lang', next);
+    history.pushState({ lang: next }, '', url);
+    applyLang(next);
+}
+
+// Back and forward re-read the URL, falling back to detection when it is clean.
+window.addEventListener('popstate', function () { applyLang(pickLang()); });
+
+function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('open');
+    document.querySelector('.sidebar-overlay').classList.toggle('show');
+}
+
+// Close the sidebar after following a link on a narrow screen, where it is an
+// overlay rather than a column.
+document.querySelectorAll('.sidebar__link').forEach(function (a) {
+    a.addEventListener('click', function () {
+        if (window.innerWidth <= 1024) { toggleSidebar(); }
+    });
+});
+
+// A copy button on every code block. The button is added here rather than
+// written into the markup so that a block added later gets one without anyone
+// remembering.
+document.querySelectorAll('pre').forEach(function (pre) {
+    var wrap = document.createElement('div');
+    wrap.className = 'code-wrap';
+    pre.parentNode.insertBefore(wrap, pre);
+    wrap.appendChild(pre);
+
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'copy-btn';
+    btn.setAttribute('aria-label', 'Copy to clipboard');
+    var idle = '<span class="lang-en">Copy</span><span class="lang-zh">複製</span>';
+    var done = '<span class="lang-en">Copied</span><span class="lang-zh">已複製</span>';
+    btn.innerHTML = idle;
+
+    btn.addEventListener('click', function () {
+        var text = (pre.querySelector('code') || pre).innerText;
+        var ok = function () {
+            btn.innerHTML = done;
+            btn.classList.add('copy-btn--done');
+            setTimeout(function () {
+                btn.innerHTML = idle;
+                btn.classList.remove('copy-btn--done');
+            }, 1600);
+        };
+        // navigator.clipboard needs a secure context; the fallback covers a page
+        // opened over plain HTTP or from a file.
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(ok, fallback);
+        } else {
+            fallback();
+        }
+        function fallback() {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand('copy'); ok(); } catch (e) { /* nothing to do */ }
+            document.body.removeChild(ta);
+        }
+    });
+
+    wrap.appendChild(btn);
+});
+</script>
+
+</body>
+</html>
