@@ -104,7 +104,7 @@ NAS 沒有回報數字時，plugin 會停止檢查，不會自行假設一個數
 
 ### QuTS hero
 
-每個 LUN、每個共用資料夾、每台 NAS 都是 **65,536 個**。儲存池至少要剩下 32 GB，才能再建立快照。
+每個 LUN、每個共用資料夾、每台 NAS 都是 **65,536 個**。儲存集區至少要剩下 32 GB，才能再建立快照。
 
 來源：[Snapshot storage limitations, QuTS hero h5.1.x](https://docs.qnap.com/operating-system/quts-hero/5.1.x/en-us/snapshot-storage-limitations-91D8C464.html)
 

@@ -39,7 +39,7 @@ pve-qnap-api-probe --host <nas> --user admin --insecure
 | **QuTS hero** | **h5.1.x** | **支援** | ZFS。可以使用即時複製，所以 Proxmox VE 的連結複製會立即完成 |
 | QuTS hero | h5.2.x | 應可運作 | 尚未驗證 |
 | QuTS hero | h4.5.x 至 h5.0.x | 應可運作 | 尚未驗證 |
-| QuTScloud | 任何版本 | **不支援** | 雲端映像檔，沒有這種形式的本機儲存池 |
+| QuTScloud | 任何版本 | **不支援** | 雲端映像檔，沒有這種形式的本機儲存集區 |
 | QNE Network OS | 任何版本 | **不支援** | 不同的產品，沒有 Storage Manager |
 | TR 系列擴充櫃上的 QTS | 任何版本 | 不適用 | 擴充櫃不是 NAS |
 
@@ -72,7 +72,7 @@ pve-qnap-api-probe --host <nas> --user admin --insecure
 機型可以執行支援的韌體，卻仍然不符合需求。
 
 * **iSCSI target 服務**：範圍內的每一台 NAS 都有，但出廠時是**停用**的。請到「儲存與快照總管 → iSCSI 與光纖通道」啟用。服務停用時，plugin 會拒絕新增 storage，並說明原因。
-* **儲存池**：這個 plugin 建立的是區塊型 LUN，必須放在儲存池裡。磁碟設定成靜態磁碟區的 NAS，沒有可用的儲存池。
+* **儲存集區**：這個 plugin 建立的是區塊型 LUN，必須放在儲存集區裡。磁碟設定成靜態磁碟區的 NAS，沒有可用的儲存集區。
 * **快照**：QNAP 的入門機型完全不支援 iSCSI LUN 快照，而且 **plugin 無法事先檢查**。新增 storage 時 plugin 會提出警告，請先對一顆測試磁碟建立一次快照，再開始使用這個功能。請查閱機型規格頁上的「快照」欄位。
 * **足夠的 LUN 數量**：一顆虛擬機磁碟就是一個 LUN。QNAP 公布的數字是 QTS 128、QuTS hero 256，plugin 會向 NAS 讀取上限，不自行假設，`pve-qnap-api-probe` 會印出來。這是這個 storage 實際的上限，剩餘空間再多也無法改變。見 [LIMITS_zh-TW.md](LIMITS_zh-TW.md)。
 
@@ -93,7 +93,7 @@ API 版本是協商出來的，不是固定寫在程式裡。如果宣稱的版�
 
 ## 六、組合不在表上時
 
-請執行探索工具，並把輸出提供給我們。它會印出機型、韌體、兩個判別欄位、數量上限與儲存池，而且不會建立任何東西：
+請執行探索工具，並把輸出提供給我們。它會印出機型、韌體、兩個判別欄位、數量上限與儲存集區，而且不會建立任何東西：
 
 ```
 pve-qnap-api-probe --host <nas> --user admin --insecure --node

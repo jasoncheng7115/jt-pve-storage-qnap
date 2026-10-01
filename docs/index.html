@@ -174,7 +174,7 @@ function pickLang() {
         </div>
         <div class="untested__body">
             <span class="lang-en"><strong>No part of this plugin has ever run against a real QNAP NAS.</strong> It is written from the API documentation alone. It compiles, passes 207 unit tests and has been driven against a simulated NAS, and none of that proves it works on your NAS. <strong>Do not put production data on it.</strong> Run it against a spare NAS, or a pool you are willing to lose, and <a href="#status">read what is still unanswered</a> first.</span>
-            <span class="lang-zh"><strong>這個 plugin 還沒有在任何實體 QNAP NAS 上執行過。</strong>它完全是依照 API 文件寫成的。它可以編譯，通過 207 個單元測試，也對模擬的 NAS 跑過完整的操作流程，但這些都不能證明它在你的 NAS 上能正常運作。<strong>請不要放正式資料。</strong>請用一台備用 NAS、或一個可以捨棄的儲存池來測試，並先<a href="#status">確認還有哪些項目尚未驗證</a>。</span>
+            <span class="lang-zh"><strong>這個 plugin 還沒有在任何實體 QNAP NAS 上執行過。</strong>它完全是依照 API 文件寫成的。它可以編譯，通過 207 個單元測試，也對模擬的 NAS 跑過完整的操作流程，但這些都不能證明它在你的 NAS 上能正常運作。<strong>請不要放正式資料。</strong>請用一台備用 NAS、或一個可以捨棄的儲存集區來測試，並先<a href="#status">確認還有哪些項目尚未驗證</a>。</span>
         </div>
     </div>
 </div>
@@ -237,7 +237,7 @@ function pickLang() {
                 </tr>
                 <tr>
                     <td><span class="lang-en">Thin provisioning</span><span class="lang-zh">精簡配置</span>
-                        <div class="cell-note"><span class="lang-en">Every disk is a thin LUN, so it occupies what has been written rather than what it was created as. Because that can overcommit the pool, <code>qnap-min-free</code> refuses to allocate once the pool's free space falls below it.</span><span class="lang-zh">每一顆磁碟都是 thin LUN，佔用的是已經寫入的量，不是建立時的大小。因為這樣可能超額配置儲存池，所以剩餘空間低於 <code>qnap-min-free</code> 時會拒絕配置。</span></div></td>
+                        <div class="cell-note"><span class="lang-en">Every disk is a thin LUN, so it occupies what has been written rather than what it was created as. Because that can overcommit the pool, <code>qnap-min-free</code> refuses to allocate once the pool's free space falls below it.</span><span class="lang-zh">每一顆磁碟都是 thin LUN，佔用的是已經寫入的量，不是建立時的大小。因為這樣可能超額配置儲存集區，所以剩餘空間低於 <code>qnap-min-free</code> 時會拒絕配置。</span></div></td>
                     <td class="yes"><span class="status-badge status-badge--supported">yes</span></td>
                     <td class="yes"><span class="status-badge status-badge--supported">yes</span></td>
                 </tr>
@@ -441,7 +441,7 @@ is now 12884901888 bytes rather than the 11811160064 requested.</code></pre>
                 <tr>
                     <td>QuTScloud</td><td><span class="lang-en">any</span><span class="lang-zh">任何版本</span></td>
                     <td><span class="status-badge status-badge--planned"><span class="lang-en">not supported</span><span class="lang-zh">不支援</span></span></td>
-                    <td><span class="lang-en">A cloud image with no local storage pools of this shape</span><span class="lang-zh">雲端映像，沒有這種形式的本機儲存池</span></td>
+                    <td><span class="lang-en">A cloud image with no local storage pools of this shape</span><span class="lang-zh">雲端映像，沒有這種形式的本機儲存集區</span></td>
                 </tr>
                 <tr>
                     <td>QNE Network OS</td><td><span class="lang-en">any</span><span class="lang-zh">任何版本</span></td>
@@ -459,7 +459,7 @@ is now 12884901888 bytes rather than the 11811160064 requested.</code></pre>
     <h3 class="subsection-title"><span class="lang-en">Model requirements, which are not the same as firmware</span><span class="lang-zh">機型需求，這和韌體版本是兩回事</span></h3>
     <ul>
         <li><span class="lang-en"><strong>The iSCSI target service.</strong> Every NAS in scope has it, but it ships <strong>off</strong>. The plugin refuses to add a storage while it is off and says so.</span><span class="lang-zh"><strong>iSCSI target 服務</strong>：範圍內的 NAS 都有，但出廠時是<strong>停用</strong>的。服務停用時，plugin 會拒絕新增 storage，並說明原因。</span></li>
-        <li><span class="lang-en"><strong>A storage pool.</strong> This plugin creates block-based LUNs, which live in a pool. A NAS whose disks are configured as static volumes has no pool for them.</span><span class="lang-zh"><strong>儲存池</strong>：這個 plugin 建立的是區塊型 LUN，必須放在儲存池裡。磁碟設定成靜態磁碟區的 NAS，沒有可用的儲存池。</span></li>
+        <li><span class="lang-en"><strong>A storage pool.</strong> This plugin creates block-based LUNs, which live in a pool. A NAS whose disks are configured as static volumes has no pool for them.</span><span class="lang-zh"><strong>儲存集區</strong>：這個 plugin 建立的是區塊型 LUN，必須放在儲存集區裡。磁碟設定成靜態磁碟區的 NAS，沒有可用的儲存集區。</span></li>
         <li><span class="lang-en"><strong>Snapshots.</strong> QNAP's entry-level models do not support snapshots of iSCSI LUNs at all, and <strong>this plugin has no way to check that in advance</strong>. It warns when the storage is added and asks you to take one snapshot of a test disk before relying on the feature.</span><span class="lang-zh"><strong>快照</strong>：QNAP 的入門機型完全不支援 iSCSI LUN 快照，而且 <strong>plugin 無法事先檢查</strong>。新增 storage 時 plugin 會提出警告，請先對一顆測試磁碟建立一次快照，再開始使用這個功能。</span></li>
     </ul>
 </section>
@@ -489,7 +489,7 @@ storage does not own, such as Virtual Machine Manager disks.</code></pre>
             <tbody>
                 <tr><td>Proxmox VE</td><td><span class="lang-en">9.x, on <strong>every node</strong>. 8.x is expected to work and has never been tested</span><span class="lang-zh">9.x，<strong>叢集中的每個節點都要安裝</strong>。8.x 預期可以運作，但從未測試過</span></td></tr>
                 <tr><td><span class="lang-en">QNAP firmware</span><span class="lang-zh">QNAP 韌體</span></td><td><span class="lang-en">QTS 4.5.1+ or any QuTS hero, see above</span><span class="lang-zh">QTS 4.5.1 以上，或任何 QuTS hero，見上表</span></td></tr>
-                <tr><td><span class="lang-en">On the NAS</span><span class="lang-zh">NAS 上</span></td><td><span class="lang-en">the iSCSI target service <strong>on</strong>, and a storage pool</span><span class="lang-zh">iSCSI target 服務必須<strong>啟用</strong>，並且要有儲存池</span></td></tr>
+                <tr><td><span class="lang-en">On the NAS</span><span class="lang-zh">NAS 上</span></td><td><span class="lang-en">the iSCSI target service <strong>on</strong>, and a storage pool</span><span class="lang-zh">iSCSI target 服務必須<strong>啟用</strong>，並且要有儲存集區</span></td></tr>
                 <tr><td><span class="lang-en">Account</span><span class="lang-zh">帳號</span></td><td><span class="lang-en">an <strong>administrator</strong>, without 2-step verification</span><span class="lang-zh"><strong>管理員</strong>，且未啟用兩步驟驗證</span></td></tr>
                 <tr><td><span class="lang-en">On each node</span><span class="lang-zh">每個節點</span></td><td><code>open-iscsi</code>, <code>multipath-tools</code></td></tr>
             </tbody>
@@ -559,7 +559,7 @@ dpkg -l jt-pve-storage-qnap | awk '/^ii/{print $3}'    # check what you got</cod
     <h2 class="section-title"><span class="lang-en">Adding the storage</span><span class="lang-zh">新增 Storage</span></h2>
     <p>
         <span class="lang-en">Every precondition is checked here (the firmware generation, the iSCSI service, the pool, the account), so a configuration that cannot work is refused now rather than at the first allocation.</span>
-        <span class="lang-zh">所有前置條件都在這一步檢查（韌體版本、iSCSI 服務、儲存池、帳號），所以無法運作的設定會在這時被拒絕，不會等到第一次配置磁碟才發現。</span>
+        <span class="lang-zh">所有前置條件都在這一步檢查（韌體版本、iSCSI 服務、儲存集區、帳號），所以無法運作的設定會在這時被拒絕，不會等到第一次配置磁碟才發現。</span>
     </p>
 <pre><code>pvesm add qnapsan qnap1 \
     --qnap-portal 192.0.2.10 \
@@ -585,7 +585,7 @@ dpkg -l jt-pve-storage-qnap | awk '/^ii/{print $3}'    # check what you got</cod
 <pre><code>pve-qnap-api-probe --host 192.0.2.10 --user admin --insecure --node</code></pre>
     <p>
         <span class="lang-en">It prints the model, the firmware, whether it is QTS or QuTS hero, the LUN and target ceilings, the storage pools with their free space, and, with <code>--node</code>, what this node has installed and which sessions it holds. The password is read from the terminal rather than taken as an argument, so it stays out of the shell history and out of <code>ps</code>.</span>
-        <span class="lang-zh">它會印出機型、韌體、是 QTS 還是 QuTS hero、LUN 與 target 的數量上限、各儲存池與剩餘空間。加上 <code>--node</code> 還會印出這個節點安裝了哪些工具、有哪些工作階段。密碼是從終端機讀取，不是當成參數傳入，所以不會留在 shell 的歷史記錄裡，也不會出現在 <code>ps</code> 中。</span>
+        <span class="lang-zh">它會印出機型、韌體、是 QTS 還是 QuTS hero、LUN 與 target 的數量上限、各儲存集區與剩餘空間。加上 <code>--node</code> 還會印出這個節點安裝了哪些工具、有哪些工作階段。密碼是從終端機讀取，不是當成參數傳入，所以不會留在 shell 的歷史記錄裡，也不會出現在 <code>ps</code> 中。</span>
     </p>
 </section>
 
@@ -643,13 +643,13 @@ pve-qnap-reap --all --remove    # act</code></pre>
                 <tr><td><code>qnap-scheme</code></td><td><code>https</code></td><td><span class="lang-en"><code>http</code> puts the password on the wire in clear</span><span class="lang-zh">用 <code>http</code> 會讓密碼以明文在網路上傳輸</span></td></tr>
                 <tr><td><code>qnap-username</code></td><td><span class="lang-en">none</span><span class="lang-zh">無</span></td><td><span class="lang-en">must be an administrator</span><span class="lang-zh">必須是管理員</span></td></tr>
                 <tr><td><code>qnap-password</code></td><td><span class="lang-en">none</span><span class="lang-zh">無</span></td><td><span class="lang-en">kept in <code>/etc/pve/priv</code>, never in <code>storage.cfg</code></span><span class="lang-zh">存放於 <code>/etc/pve/priv</code>，不會寫進 <code>storage.cfg</code></span></td></tr>
-                <tr><td><code>qnap-pool</code></td><td><span class="lang-en">none</span><span class="lang-zh">無</span></td><td><span class="lang-en">the pool number Storage &amp; Snapshots shows</span><span class="lang-zh">「儲存與快照總管」顯示的儲存池編號</span></td></tr>
+                <tr><td><code>qnap-pool</code></td><td><span class="lang-en">none</span><span class="lang-zh">無</span></td><td><span class="lang-en">the pool number Storage &amp; Snapshots shows</span><span class="lang-zh">「儲存與快照總管」顯示的儲存集區編號</span></td></tr>
                 <tr><td><code>qnap-target-mode</code></td><td><code>shared</code></td><td><span class="lang-en">or <code>per-volume</code>, which costs a target per disk</span><span class="lang-zh">或 <code>per-volume</code>，每顆磁碟各佔用一個 target</span></td></tr>
                 <tr><td><code>qnap-chap-username</code> / <code>-password</code></td><td><span class="lang-en">none</span><span class="lang-zh">無</span></td><td><span class="lang-en">the access control this plugin relies on</span><span class="lang-zh">這個 plugin 所依賴的存取控制</span></td></tr>
                 <tr><td><code>qnap-mutual-chap-username</code> / <code>-password</code></td><td><span class="lang-en">none</span><span class="lang-zh">無</span></td><td><span class="lang-en">authenticates the NAS to the node</span><span class="lang-zh">讓 NAS 對節點驗證自己</span></td></tr>
                 <tr><td><code>qnap-ssl-verify</code></td><td><code>0</code></td><td><span class="lang-en">QTS ships a self-signed certificate</span><span class="lang-zh">QTS 出廠是自簽憑證</span></td></tr>
                 <tr><td><code>qnap-data-portals</code></td><td><span class="lang-en">management address</span><span class="lang-zh">管理位址</span></td><td><span class="lang-en">iSCSI data addresses, comma-separated</span><span class="lang-zh">iSCSI 資料位址，逗號分隔</span></td></tr>
-                <tr><td><code>qnap-min-free</code></td><td><code>10</code></td><td><span class="lang-en">refuse to allocate below this many GiB free in the pool</span><span class="lang-zh">儲存池剩餘空間低於這個 GiB 數就拒絕配置</span></td></tr>
+                <tr><td><code>qnap-min-free</code></td><td><code>10</code></td><td><span class="lang-en">refuse to allocate below this many GiB free in the pool</span><span class="lang-zh">儲存集區剩餘空間低於這個 GiB 數就拒絕配置</span></td></tr>
                 <tr><td><code>qnap-no-path-retry</code></td><td><code>18</code></td><td><span class="lang-en">multipath; a number, never <code>queue</code></span><span class="lang-zh">multipath 用；一定是數字，絕不用 <code>queue</code></span></td></tr>
                 <tr><td><code>qnap-sector-size</code></td><td><code>512</code></td><td><span class="lang-en">or <code>4096</code>; some guests will not boot from 4Kn</span><span class="lang-zh">或 <code>4096</code>。部分 guest 作業系統無法從 4Kn 開機</span></td></tr>
                 <tr><td><code>qnap-thin</code></td><td><code>1</code></td><td><span class="lang-en">a thick LUN reserves its whole capacity at creation</span><span class="lang-zh">厚配置的 LUN 建立時就佔滿整個容量</span></td></tr>
@@ -669,7 +669,7 @@ pve-qnap-reap --all --remove    # act</code></pre>
 
     <ul>
         <li><span class="lang-en"><strong>Run the discovery tool.</strong> It only reads: it creates nothing, deletes nothing, and prints the model, the firmware and the limits your NAS reports.</span><span class="lang-zh"><strong>跑一次探索工具。</strong>它只讀取，不建立也不刪除任何東西，並印出你的 NAS 回報的機型、韌體與數量上限。</span></li>
-        <li><span class="lang-en"><strong>Work through the first run in TESTING.md</strong> on a spare NAS or a pool you are willing to lose, and report what happened at each step, including the steps that simply worked.</span><span class="lang-zh"><strong>在一台備用 NAS、或一個可以捨棄的儲存池上，照 TESTING_zh-TW.md 的第一次上機步驟執行一遍</strong>，並回報每一步的結果，包含單純成功的步驟。</span></li>
+        <li><span class="lang-en"><strong>Work through the first run in TESTING.md</strong> on a spare NAS or a pool you are willing to lose, and report what happened at each step, including the steps that simply worked.</span><span class="lang-zh"><strong>在一台備用 NAS、或一個可以捨棄的儲存集區上，照 TESTING_zh-TW.md 的第一次上機步驟執行一遍</strong>，並回報每一步的結果，包含單純成功的步驟。</span></li>
         <li><span class="lang-en"><strong>Anything that contradicts this page.</strong> That means something written here is wrong, which is worth more than a feature request.</span><span class="lang-zh"><strong>任何與本頁矛盾的地方。</strong>那代表這裡寫的某句話是錯的，而那比一個功能請求有價值。</span></li>
     </ul>
 

@@ -21,7 +21,7 @@ QTS · QuTS hero · 共用儲存 · 線上遷移 · 快照 / 倒回 · 複製 ·
 | | |
 |---|---|
 | **請不要** | 放正式資料、指向存有任何資料的 NAS、或以它為基礎規劃叢集 |
-| **請這樣做** | 用一台備用 NAS、或一個可以捨棄的儲存池來測試，然後回報結果 |
+| **請這樣做** | 用一台備用 NAS、或一個可以捨棄的儲存集區來測試，然後回報結果 |
 
 有三個問題必須先在實機上得到答案。任何一題的答案與預期不同，要改的都是設計，不是修一個 bug：
 
@@ -98,7 +98,7 @@ plugin 會偵測連接的是哪一種，並使用對應的方式。如果正在�
 |---|---|
 | Proxmox VE | 9.x，**叢集中的每個節點都要安裝**。8.x 預期可以運作，但從未測試過 |
 | QNAP 韌體 | QTS 4.5.1 以上，或任何 QuTS hero。見 [docs/SUPPORTED-QNAP-OS_zh-TW.md](docs/SUPPORTED-QNAP-OS_zh-TW.md) |
-| NAS 上 | iSCSI target 服務必須**啟用**，並且要有儲存池 |
+| NAS 上 | iSCSI target 服務必須**啟用**，並且要有儲存集區 |
 | 帳號 | **管理員**，且未啟用兩步驟驗證。見 [docs/QNAP-ACCOUNT_zh-TW.md](docs/QNAP-ACCOUNT_zh-TW.md) |
 | 每個節點 | `open-iscsi`、`multipath-tools` |
 
@@ -152,7 +152,7 @@ dpkg -l jt-pve-storage-qnap | awk '/^ii/{print $3}'    # 確認安裝的版本
 pve-qnap-api-probe --host <nas> --user admin --insecure --node
 ```
 
-它會印出機型、韌體、是 QTS 還是 QuTS hero、LUN 與 target 的數量上限、各儲存池與剩餘空間，以及這個節點安裝了哪些工具。
+它會印出機型、韌體、是 QTS 還是 QuTS hero、LUN 與 target 的數量上限、各儲存集區與剩餘空間，以及這個節點安裝了哪些工具。
 
 ## 在 Proxmox VE 新增 qnapsan storage
 
@@ -192,13 +192,13 @@ pve-qnap-reap --all --remove    # 實際清除
 | `qnap-scheme` | `https` | 使用 `http` 時，密碼在網路上不會加密 |
 | `qnap-username` | 無 | 必須是管理員 |
 | `qnap-password` | 無 | 存放於 `/etc/pve/priv`，不會寫入 `storage.cfg` |
-| `qnap-pool` | 無 | 「儲存與快照總管」顯示的儲存池編號 |
+| `qnap-pool` | 無 | 「儲存與快照總管」顯示的儲存集區編號 |
 | `qnap-target-mode` | `shared` | 或 `per-volume`，每顆磁碟各佔用一個 target |
 | `qnap-chap-username` / `-password` | 無 | 這個 plugin 所依賴的存取控制 |
 | `qnap-mutual-chap-username` / `-password` | 無 | 讓 NAS 向節點驗證自己 |
 | `qnap-ssl-verify` | `0` | QTS 出廠時使用自簽憑證 |
 | `qnap-data-portals` | 管理位址 | iSCSI 資料位址，以逗號分隔 |
-| `qnap-min-free` | `10` | 儲存池剩餘空間低於這個 GiB 數時拒絕配置 |
+| `qnap-min-free` | `10` | 儲存集區剩餘空間低於這個 GiB 數時拒絕配置 |
 | `qnap-no-path-retry` | `18` | multipath 用。一定是數字，不使用 `queue` |
 | `qnap-sector-size` | `512` | 或 `4096`。部分 guest 作業系統無法從 4Kn 開機 |
 | `qnap-thin` | `1` | 完整配置的 LUN 在建立時就會保留全部容量 |

@@ -40,7 +40,7 @@
 - **憑證存放在 `/etc/pve/priv/storage/<id>.qnap`**，不會寫入 `storage.cfg`。每一個呼叫都是 POST，所以憑證不會出現在 URL 裡。登入被拒絕時只嘗試一次，在設定改變之前不再重試，所以密碼錯誤不會讓節點被 NAS 封鎖。
 - **多重路徑**。為 QNAP LUN 寫入設定檔，`no_path_retry` 一定是數字，不使用 `queue`。每一個裝置在使用之前都會與核心回報的 WWID 比對，而且一次只清除一個指定的 map。
 - **NAS 上已經有這個 storage 前綴的 LUN 時，`pvesm add` 會提出警告**。如果另一個 Proxmox VE 叢集在同一台 NAS 上用了相同的 storage 名稱，兩邊的磁碟名稱會完全重疊。
-- **`pve-qnap-api-probe`**：唯讀工具，印出機型、韌體、是 QTS 還是 QuTS hero、LUN 與 target 的數量上限、儲存池，以及節點安裝了哪些工具。
+- **`pve-qnap-api-probe`**：唯讀工具，印出機型、韌體、是 QTS 還是 QuTS hero、LUN 與 target 的數量上限、儲存集區，以及節點安裝了哪些工具。
 - **`pve-qnap-reap`**：回報節點為已經用不到的 LUN 保留的 multipath map，加上 `--remove` 才會清除。預設只回報。
 - **英文與繁體中文文件**：[docs/TESTING_zh-TW.md](docs/TESTING_zh-TW.md)（全部十六項待驗證事項與第一次上機的步驟）、[docs/SUPPORTED-QNAP-OS_zh-TW.md](docs/SUPPORTED-QNAP-OS_zh-TW.md)、[docs/QNAP-ACCOUNT_zh-TW.md](docs/QNAP-ACCOUNT_zh-TW.md)。
 - **196 個單元測試與建置檢查**：不得有節點層級的 multipath 清除、URL 裡不得有憑證、外部指令一律經過工具路徑解析、每一個呼叫的函式都必須存在，以及 `t/07-api-scope.t`。它列出 plugin 呼叫的每一個 QNAP API，原始碼只要多出一個不在清單上的呼叫，測試就會失敗。
