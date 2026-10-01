@@ -77,7 +77,7 @@ sub list {
     my ($self) = @_;
 
     my $r = $self->api->call(CGI_PORTAL, func => 'extra_get', targetList => 1);
-    die "storage '" . $self->_storeid . "': could not list iSCSI targets —"
+    die "storage '" . $self->_storeid . "': could not list iSCSI targets:"
       . " $r->{transport}\n" if $r->{transport};
 
     my $rows = PVE::Storage::Custom::QNAP::API::rows($r,
@@ -132,7 +132,7 @@ sub info {
 
     my $r = $self->api->call(CGI_PORTAL,
         func => 'extra_get', targetInfo => 1, targetIndex => $index);
-    die "storage '" . $self->_storeid . "': could not read target $index —"
+    die "storage '" . $self->_storeid . "': could not read target $index:"
       . " $r->{transport}\n" if $r->{transport};
 
     my ($row) = @{ PVE::Storage::Custom::QNAP::API::rows($r, '//targetInfo/row') };
@@ -200,7 +200,7 @@ sub assert_room_for_target {
     die "storage '" . $self->_storeid . "': the NAS already has $have iSCSI"
       . " targets, which is this model's maximum ($max). With"
       . " qnap-target-mode=per-volume each disk needs its own target, so this"
-      . " ceiling can be reached long before the LUN one —"
+      . " ceiling can be reached long before the LUN one:"
       . " qnap-target-mode=shared uses one target for the whole storage and is"
       . " the default for that reason. The count includes targets this storage"
       . " does not own.\n";
@@ -334,7 +334,7 @@ sub _write_acl {
     # configured and protects nothing, which is strictly worse than none because
     # nobody goes looking for it.
     die "storage '" . $self->_storeid . "': qnap-chap-username is set but there"
-      . " is no CHAP secret. Set qnap-chap-password, or unset the username — a"
+      . " is no CHAP secret. Set qnap-chap-password, or unset the username: a"
       . " target with an empty secret accepts anyone while reporting that CHAP"
       . " is on.\n"
         if $on && (!defined $opt{chap_password} || !length $opt{chap_password});
@@ -391,7 +391,7 @@ sub reconcile_chap {
     my $want_on   = (defined $want_user && length $want_user) ? 1 : 0;
 
     die "storage '" . $self->_storeid . "': qnap-chap-username is set but there"
-      . " is no CHAP secret. Set qnap-chap-password, or unset the username — a"
+      . " is no CHAP secret. Set qnap-chap-password, or unset the username: a"
       . " target with an empty secret accepts anyone while reporting that CHAP"
       . " is on.\n"
         if $want_on && (!defined $opt{chap_password} || !length $opt{chap_password});
@@ -436,7 +436,7 @@ sub delete {
     return 1 if $gone;
 
     die "storage '" . $self->_storeid . "': could not remove iSCSI target"
-      . " $index — "
+      . " $index: "
       . ($r->{transport}
          // PVE::Storage::Custom::QNAP::API::error_text($r->{result})) . "\n";
 }

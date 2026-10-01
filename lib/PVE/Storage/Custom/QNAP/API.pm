@@ -528,7 +528,7 @@ sub login {
         # is usually the same NAS, and each attempt counts towards a block.
         $self->{credential_refused} = $why;
         $self->_write_latch($why);
-        die "storage '$self->{storeid}': QTS refused the login — $why."
+        die "storage '$self->{storeid}': QTS refused the login: $why."
           . " Check qnap-username and qnap-password, and that the account is"
           . " an administrator: the Storage Manager and iSCSI CGIs are"
           . " administrator-only.\n";
@@ -627,26 +627,40 @@ sub call {
     # expires one, and a storage nobody has touched for a while meets that on
     # the very next poll. `authPassed` 0 on a call that carried a sid is how it
     # says so.
-    my $passed = text($r, 'authPassed');
-    if (!$r->{transport} && defined $passed && $passed eq '0') {
-        $self->{sid} = undef;
+    my $still_refused = 0;
+    if (_says_not_logged_in($r)) {
+        # Logged out rather than merely forgotten: if the session was in fact
+        # alive and it was this CGI that could not see it, dropping the sid
+        # here would leave it behind on the NAS.
+        $self->logout;
         $self->login;
         $r = $self->_do_call($cgi, \%params, $method);
+        # A sid issued a moment ago and STILL not recognised is not an expired
+        # session. It is what a CGI that never read the POST body looks like:
+        # the sid was in that body.
+        $still_refused = _says_not_logged_in($r);
     }
 
-    # A firmware that ignores a POST body answers as though no parameters were
-    # sent. Retrying as a GET is the only way to tell that apart from a genuine
-    # refusal — and it is safe ONLY when nothing in the call is a secret.
-    if (!$secret && !$r->{transport} && !defined text($r, 'result')
-        && ($method // 'POST') ne 'GET') {
+    # THE GET FALLBACK, and the only thing that triggers it.
+    #
+    # It exists for a firmware whose CGIs ignore a POST body. It used to fire
+    # on any answer without a `<result>` — and two perfectly healthy answers
+    # have none: the NAS's own description, and a forked operation that is still
+    # running. So an ordinary NAS was sent a GET, with the sid in its URL, on
+    # every one of those calls, while this file promised it never happens.
+    # Driving the plugin against a fake NAS that counts its GETs showed it.
+    #
+    # Now it takes the one symptom that actually means "the body was not read",
+    # and it is never taken for a call that carries a secret.
+    if ($still_refused && !$secret && ($method // 'POST') ne 'GET') {
         my $g = $self->_do_call($cgi, \%params, 'GET');
-        if (defined text($g, 'result')) {
+        if (!$g->{transport} && !_says_not_logged_in($g)) {
             _warn_once("$self->{storeid}:getfallback",
-                "storage '$self->{storeid}': this NAS did not answer a POST to"
-              . " $cgi but did answer a GET. Falling back to GET for calls that"
-              . " carry no credential. Calls that DO carry one are never sent"
-              . " this way, so if the login also fails, the firmware is too old"
-              . " for this plugin.\n");
+                "storage '$self->{storeid}': this NAS did not read the POST sent"
+              . " to $cgi but did answer a GET. Falling back to GET for calls"
+              . " that carry no credential. Calls that DO carry one are never"
+              . " sent this way, so CHAP cannot be configured on this"
+              . " firmware.\n");
             $r = $g;
         }
     }
@@ -654,6 +668,15 @@ sub call {
     $r->{result} = text($r, 'result');
     $r->{cgi}    = $cgi;
     return $r;
+}
+
+# `authPassed` 0 on an answer that arrived: the NAS does not consider this
+# request logged in.
+sub _says_not_logged_in {
+    my ($r) = @_;
+    return 0 if ref $r ne 'HASH' || $r->{transport};
+    my $passed = text($r, 'authPassed');
+    return (defined $passed && $passed eq '0') ? 1 : 0;
 }
 
 sub _do_call {
@@ -688,15 +711,15 @@ sub call_ok {
     my $what = delete $params{_what} // $cgi;
 
     my $r = $self->call($cgi, %params);
-    die "storage '$self->{storeid}': $what failed — $r->{transport}\n"
+    die "storage '$self->{storeid}': $what failed: $r->{transport}\n"
         if $r->{transport};
 
     my $result = $r->{result};
-    die "storage '$self->{storeid}': $what — the NAS answered without a"
+    die "storage '$self->{storeid}': $what: the NAS answered without a"
       . " <result>, so whether it happened is unknown. Check the NAS before"
       . " retrying.\n" if !defined $result;
 
-    die "storage '$self->{storeid}': $what failed — " . error_text($result) . "\n"
+    die "storage '$self->{storeid}': $what failed: " . error_text($result) . "\n"
         if $result !~ /\A-?\d+\z/ || $result != 0;
 
     return $r;
@@ -709,15 +732,15 @@ sub call_id {
     my $what = delete $params{_what} // $cgi;
 
     my $r = $self->call($cgi, %params);
-    die "storage '$self->{storeid}': $what failed — $r->{transport}\n"
+    die "storage '$self->{storeid}': $what failed: $r->{transport}\n"
         if $r->{transport};
 
     my $result = $r->{result};
-    die "storage '$self->{storeid}': $what — the NAS answered without a"
+    die "storage '$self->{storeid}': $what: the NAS answered without a"
       . " <result>, so whether it happened is unknown. Check the NAS before"
       . " retrying.\n" if !defined $result || $result !~ /\A-?\d+\z/;
 
-    die "storage '$self->{storeid}': $what failed — " . error_text($result) . "\n"
+    die "storage '$self->{storeid}': $what failed: " . error_text($result) . "\n"
         if $result < 0;
 
     return $result + 0;
@@ -780,7 +803,7 @@ sub wait_for_fork {
     die "storage '$self->{storeid}': $what has been running on the NAS for"
       . " ${limit}s and has not reported a result"
       . (defined $last ? " (last transport error: $last)" : '')
-      . ". It has NOT failed — check Storage & Snapshots on the NAS before"
+      . ". It has NOT failed: check Storage & Snapshots on the NAS before"
       . " retrying, because retrying may duplicate it.\n";
 }
 

@@ -11,25 +11,29 @@ is at the start of that process.
 
 ## What that means concretely
 
-Everything array-facing is written from the API documentation for QTS 5.1 —
-authentication, iSCSI targets and LUNs, storage pools, and LUN snapshots — and
-from nothing else: no NAS has answered any of it yet.
+Everything that talks to the NAS (authentication, iSCSI targets and LUNs,
+storage pools, and LUN snapshots) is written from the API documentation for QTS
+5.1 and from nothing else. No NAS has answered any of it yet.
 
 Where the behaviour is known, the plugin follows it. Where it is not, the code
-is deliberately strict — it refuses rather than assumes, so a wrong guess
+is deliberately strict: it refuses rather than assumes, so a wrong guess
 surfaces as a message naming the reason instead of as a bare negative
 `<result>` from the NAS.
 
-The parts ported from the related projects — the multipath handling, the iSCSI
-node management, the bounded command runner, the WWID tracking — **have** been
-measured, on other arrays. What they protect against is the node's and the
+The plugin has been driven through its whole lifecycle against a simulated NAS,
+on a simulated QTS and a simulated QuTS hero. That checks the plugin against
+this project's own reading of how a NAS answers. It does not check the reading.
+
+The parts ported from the related projects (the multipath handling, the iSCSI
+node management, the bounded command runner, the WWID tracking) **have** been
+measured, on other storage. What they protect against is the node's and the
 kernel's behaviour, which does not change with the storage vendor.
 
 ---
 
 ## Open items, in the order they should be settled
 
-### Blocking — a wrong answer here changes the design
+### Blocking: a wrong answer here changes the design
 
 1. **Does `LUNNAA` match `/sys/block/<sd>/device/wwid`?**
    The plugin identifies every device by comparing them. `LUNNAA` is 32 hex
@@ -41,8 +45,8 @@ kernel's behaviour, which does not change with the storage vendor.
 2. **What does a QNAP LUN report as SCSI vendor and product?**
    The multipath drop-in matches vendor `QNAP` and every product. If the vendor
    string differs, the stanza does not apply and the LUN falls back to
-   multipath's generic defaults — which include `no_path_retry queue`, i.e. an
-   unkillable hang when every path is lost.
+   multipath's generic defaults. Those include `no_path_retry queue`, which is
+   an unkillable hang when every path is lost.
    *How to check:* `cat /sys/block/sdX/device/vendor`.
 
 3. **Does `edit_lun` grow a LUN that is mapped and in use?**
@@ -53,10 +57,10 @@ kernel's behaviour, which does not change with the storage vendor.
 4. **Does `add_lun` accept a fractional `LUNCapacity`?**
    The plugin rounds every size up to a whole GiB, because a whole number is
    the only form known to work. If decimals work, that rounding could be
-   finer — but rounding up is never wrong, only wasteful, so this is an
-   improvement rather than a fix.
+   finer. Rounding up is never wrong, only wasteful, so this is an improvement
+   rather than a fix.
 
-### Important — these decide whether an operation is safe
+### Important: these decide whether an operation is safe
 
 5. **Does `recover_snapshot` with `by_lun=1` keep snapshots NEWER than the one
    restored?** `volume_rollback_is_possible` currently allows the rollback. If
@@ -69,16 +73,18 @@ kernel's behaviour, which does not change with the storage vendor.
    every node. It has never been seen to happen on any array in this family.
 
 7. **Does `authLogin.cgi` accept a POST?** Every call this plugin makes is a
-   POST, so that no credential ever travels in a URL. Non-credential calls fall back to GET automatically if a firmware
-   ignores POST bodies; **the login does not**, so a firmware that only reads
-   the query string cannot be used at all. This is the single most likely reason
-   for a first run to fail.
+   POST, so that no credential ever travels in a URL. If a session that was
+   just issued is still not recognised by another CGI, the plugin takes that as
+   a firmware that did not read the POST body and repeats that call as a GET,
+   but only for calls that carry no secret. **The login is never sent as a
+   GET**, so a firmware that only reads the query string cannot be used at all.
+   This is the single most likely reason for a first run to fail.
 
 8. **Concurrency.** `get_return` is keyed by CGI name rather than by job, so a
    clone and a rollback in flight at once cannot be told apart. The plugin
    serialises both with PVE's cluster storage lock. Worth confirming that
-   nothing else on the NAS — a scheduled snapshot job, the web interface —
-   shares that channel. What `get_return` wants as `cginame` is unmeasured too:
+   nothing else on the NAS (a scheduled snapshot job, the web interface) shares
+   that channel. What `get_return` wants as `cginame` is unmeasured too:
    the plugin sends `snapshot.cgi`, and if QTS wants something else, a clone or
    a rollback never collects its result.
 
@@ -94,19 +100,22 @@ kernel's behaviour, which does not change with the storage vendor.
     operation and logs out when it is done, and every node polls every ten
     seconds. The logout carries the `sid` and an explicit `logout=1`. If QTS
     answers the logout and keeps the session anyway, that is six leaked
-    sessions a minute per node — which is how a related project filled an
-    array's session table while every logout reported success.
+    sessions a minute per node.
     *How to check:* leave the storage configured for ten minutes and count the
     sessions the NAS itself lists for the plugin's account. The answer has to
     come from the NAS, not from the logout's own reply.
 
-12. **How many LUNs one target will carry.** With `qnap-target-mode=shared`,
-    the default, every disk on the storage is mapped to one target, so that
-    target's ceiling is the storage's. The NAS reports a ceiling for LUNs and
-    one for targets, and none for LUNs per target. The related Synology plugin
-    measured 200 on one target without objection, which says nothing about QTS.
-    If QTS stops lower, `qnap-target-mode=per-volume` is the way out, and it
-    trades this ceiling for the target one.
+12. **How many LUNs one target will carry, and whether LUNs and targets share
+    one ceiling.** With `qnap-target-mode=shared`, the default, every disk on
+    the storage is mapped to one target, so that target's ceiling is the
+    storage's. The NAS reports a ceiling for LUNs and one for targets, and none
+    for LUNs per target. The related Synology plugin measured 200 on one target
+    without objection, which says nothing about QTS. If QTS stops lower,
+    `qnap-target-mode=per-volume` is the way out, and it trades this ceiling for
+    the target one. QNAP's user guides also give 255 for LUNs and targets
+    **combined**, while the plugin checks the two separately. See
+    [LIMITS.md](LIMITS.md). *How to check:* map LUNs to one target until the NAS
+    refuses, and note the count and what it answered.
 
 ### Worth knowing
 
@@ -147,7 +156,7 @@ pvesm add qnapsan qnap1 \
 pvesm alloc qnap1 9999 '' 1G
 pvesm list qnap1
 
-# 4. Attach it and confirm the identity — item 1 above.
+# 4. Attach it and confirm the identity (item 1 above).
 qm create 9999 --scsi0 qnap1:vm-9999-disk-0 --scsihw virtio-scsi-single
 qm start 9999
 multipath -ll
@@ -158,7 +167,7 @@ qm snapshot 9999 s1
 qm stop 9999
 qm rollback 9999 s1
 
-# 6. Resize — item 3.
+# 6. Resize (item 3).
 qm resize 9999 scsi0 +1G
 
 # 7. Template and linked clone.
@@ -179,5 +188,5 @@ the first thing to suspect.
 
 Please include the output of `pve-qnap-api-probe --node`, the model, the
 firmware version, and whether it is QTS or QuTS hero. The plugin's messages are
-written to be quotable — if one of them was not enough to act on, that is itself
+written to be quotable. If one of them was not enough to act on, that is itself
 a defect worth reporting.

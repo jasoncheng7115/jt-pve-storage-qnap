@@ -1,8 +1,35 @@
+jt-pve-storage-qnap (0.6.0-1) unstable; urgency=medium
+
+  * Fixed: adding a storage with CHAP was refused. pvesm add with
+    qnap-chap-username and qnap-chap-password answered "there is no CHAP
+    secret", because the target was created from the stored secret and the
+    secret is only stored after every check has passed. The target is now
+    created from the secret that was just supplied. Adding a storage without
+    CHAP was not affected.
+  * Fixed: a GET request was sent to a NAS that reads POST bodies. The fallback
+    for a firmware that ignores a POST body was taken for any answer without a
+    result element, and two ordinary answers have none. It is now taken only
+    when a session that was just issued is still not recognised, and never for
+    a call that carries a secret.
+  * A snapshot that a clone depends on cannot be deleted on QuTS hero. The
+    refusal now quotes what the NAS answered and names the likely cause.
+  * Messages no longer use a dash: a colon separates an operation from the
+    reason it failed. The multipath drop-in carries the same change in its own
+    comment, so a node with a qnapsan storage rewrites it once.
+  * Added docs/LIMITS.md: the LUN, target and snapshot maxima QNAP publishes,
+    with the source of each figure.
+  * The plugin was driven through its whole lifecycle against a simulated NAS,
+    which is what found the two defects above. NOT YET EXERCISED AGAINST
+    HARDWARE: docs/TESTING.md lists every open item, and every 0.x release is a
+    prerelease.
+
+ -- Jason Cheng (Jason Tools) <jason@jason.tools>  Thu, 01 Oct 2026 19:10:13 +0800
+
 jt-pve-storage-qnap (0.1.0-1) unstable; urgency=medium
 
   * First release. Registers the storage type "qnapsan": one VM disk is one thin
     LUN on a QNAP NAS over iSCSI, with the NAS's own snapshots and clones.
-  * NOT YET EXERCISED AGAINST HARDWARE — docs/TESTING.md lists every open item,
+  * NOT YET EXERCISED AGAINST HARDWARE: docs/TESTING.md lists every open item,
     and every 0.x release is a prerelease.
   * Requires Storage Manager V2, detected from authLogin.cgi's storage_v2 flag
     and refused rather than discovered later. QuTS hero is detected from is_zfs
@@ -17,7 +44,7 @@ jt-pve-storage-qnap (0.1.0-1) unstable; urgency=medium
   * Credentials are kept in /etc/pve/priv/storage/<id>.qnap rather than in
     storage.cfg, and every call is a POST, so no credential travels in a URL.
   * Snapshots carry no record of who took them on QTS, so ownership lives in the
-    name — an operator's own scheduled snapshots are invisible to PVE and
+    name. An operator's own scheduled snapshots are invisible to PVE and
     therefore cannot be deleted by a VM operation.
 
  -- Jason Cheng (Jason Tools) <jason@jason.tools>  Wed, 13 Aug 2026 12:00:00 +0800

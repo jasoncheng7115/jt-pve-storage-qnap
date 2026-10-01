@@ -77,7 +77,7 @@ jobs:
       - name: Every document has both languages
         run: |
           fail=0
-          for f in README.md CHANGELOG.md docs/TESTING.md docs/QNAP-ACCOUNT.md docs/SUPPORTED-QNAP-OS.md; do
+          for f in README.md CHANGELOG.md docs/TESTING.md docs/LIMITS.md docs/QNAP-ACCOUNT.md docs/SUPPORTED-QNAP-OS.md; do
             pair="${f%.md}_zh-TW.md"
             if [ ! -f "$pair" ]; then
               echo "ERROR: $f has no $pair"

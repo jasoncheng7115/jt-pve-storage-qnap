@@ -343,7 +343,7 @@ sub rescan_device {
     # made a resize look as though it had propagated when it had not.
     if (!-w $path) {
         warn "cannot rescan $dev: $path is not writable. A multipath map has no"
-           . " rescan file — pass its slave devices instead.\n";
+           . " rescan file: pass its slave devices instead.\n";
         return 0;
     }
 

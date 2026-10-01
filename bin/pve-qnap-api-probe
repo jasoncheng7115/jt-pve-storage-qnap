@@ -33,7 +33,7 @@ use PVE::Storage::Custom::QNAP::ISCSI;
 # missing subroutine rather than about a missing tool.
 use PVE::Storage::Custom::QNAP::Command;
 
-my $VERSION = '0.1.0';
+my $VERSION = '0.6.0';
 
 my %opt = (port => 443, scheme => 'https');
 my $show_version;
@@ -56,7 +56,7 @@ usage(0) if $opt{help};
 sub usage {
     my ($rc) = @_;
     print <<'EOF';
-pve-qnap-api-probe — ask a QNAP NAS what it supports. Read only.
+pve-qnap-api-probe: ask a QNAP NAS what it supports. Read only.
 
   pve-qnap-api-probe --host <address> --user <admin> [--password <pw>]
                      [--port 443] [--scheme https|http] [--pool <id>]
@@ -144,7 +144,7 @@ eval { $api->login; 1 } or do {
 };
 ok "logged in to $opt{host}:$opt{port} over $opt{scheme}";
 warn_ "the certificate was not verified (--insecure)" if $opt{insecure};
-warn_ "the password travelled in clear — use --scheme https where you can"
+warn_ "the password travelled in clear: use --scheme https where you can"
     if $opt{scheme} eq 'http';
 
 head "The NAS";
@@ -156,17 +156,17 @@ info "firmware   " . ($info->{firmware} // '?') . " build " . ($info->{build} //
 # THE ONE THAT DECIDES WHETHER THIS PLUGIN WORKS AT ALL. The legacy Storage
 # Manager is a different set of CGI calls entirely.
 if ($api->is_storage_v2) {
-    ok "Storage Manager V2 (storage_v2=1) — this plugin's API surface";
+    ok "Storage Manager V2 (storage_v2=1): this plugin's API surface";
 } else {
     bad "this firmware reports the LEGACY Storage Manager (storage_v2 is "
       . (($info->{storage_v2} // 'absent')) . "). The plugin implements V2 only.";
 }
 
 if ($api->is_zfs) {
-    ok "QuTS hero (is_zfs=1) — instant clones are available, so a Proxmox VE"
+    ok "QuTS hero (is_zfs=1): instant clones are available, so a Proxmox VE"
      . " linked clone is instant";
 } else {
-    info "QTS (is_zfs=" . ($info->{is_zfs} // '0') . ") — clones COPY."
+    info "QTS (is_zfs=" . ($info->{is_zfs} // '0') . "): clones COPY."
        . " A linked clone is as slow and as large as a full one.";
 }
 
@@ -208,10 +208,10 @@ if (!$luns) {
     my $n = scalar @$luns;
     my $max = $p->{max_luns};
     if (defined $max && $n >= $max) {
-        bad "$n of $max LUNs used — the NAS is full. No further disks can be"
+        bad "$n of $max LUNs used: the NAS is full. No further disks can be"
           . " created however much space is free.";
     } elsif (defined $max && $max - $n <= 16) {
-        warn_ "$n of $max LUNs used — only " . ($max - $n) . " left.";
+        warn_ "$n of $max LUNs used: only " . ($max - $n) . " left.";
     } else {
         ok "$n LUN(s)" . (defined $max ? " of $max" : '');
     }
@@ -225,7 +225,7 @@ if ($targets) {
     my $n = scalar @$targets;
     my $max = $p->{max_targets};
     if (defined $max && $n >= $max) {
-        bad "$n of $max targets used — the NAS cannot create another.";
+        bad "$n of $max targets used: the NAS cannot create another.";
     } else {
         ok "$n target(s)" . (defined $max ? " of $max" : '');
     }

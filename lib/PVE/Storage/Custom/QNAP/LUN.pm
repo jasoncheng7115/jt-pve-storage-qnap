@@ -99,11 +99,11 @@ sub list {
     my ($self) = @_;
 
     my $r = $self->api->call(CGI_PORTAL, func => 'extra_get', extra_lun_index => 1);
-    die "storage '" . $self->_storeid . "': could not list LUNs — $r->{transport}\n"
+    die "storage '" . $self->_storeid . "': could not list LUNs: $r->{transport}\n"
         if $r->{transport};
 
     my $result = $r->{result};
-    die "storage '" . $self->_storeid . "': could not list LUNs — "
+    die "storage '" . $self->_storeid . "': could not list LUNs: "
       . PVE::Storage::Custom::QNAP::API::error_text($result) . "\n"
         if defined $result && $result =~ /\A-\d+\z/;
 
@@ -135,7 +135,7 @@ sub get_by_index {
     my $r = $self->api->call(CGI_PORTAL,
         func => 'extra_get', lun_info => 1, lunID => $index);
 
-    die "storage '" . $self->_storeid . "': could not read LUN $index —"
+    die "storage '" . $self->_storeid . "': could not read LUN $index:"
       . " $r->{transport}\n" if $r->{transport};
 
     my ($row) = @{ PVE::Storage::Custom::QNAP::API::rows($r, '//LUNInfo/row') };
@@ -263,7 +263,7 @@ sub wait_ready {
     # A timeout means the NAS is still working, not that it failed. Saying
     # "failed" invites a retry, and a retried create makes a second LUN.
     die "storage '" . $self->_storeid . "': the NAS is still busy with $what on"
-      . " LUN $index after ${limit}s. It has NOT failed — check Storage &"
+      . " LUN $index after ${limit}s. It has NOT failed: check Storage &"
       . " Snapshots on the NAS before retrying, because retrying may duplicate"
       . " it.\n";
 }
@@ -291,7 +291,7 @@ sub assert_room_for_lun {
 
     die "storage '" . $self->_storeid . "': the NAS already holds $have LUNs,"
       . " which is this model's maximum ($max). Free space is not the problem"
-      . " and adding capacity will not help — delete LUNs, or use a second NAS."
+      . " and adding capacity will not help. Delete LUNs, or use a second NAS."
       . " The count includes LUNs this storage does not own, such as Virtual"
       . " Machine Manager disks.\n";
 }
@@ -307,7 +307,7 @@ sub warn_if_near_lun_limit {
     return if $self->{warned_lun_limit};
     $self->{warned_lun_limit} = 1;
     warn "storage '" . $self->_storeid . "': $have of $max LUNs used on this"
-       . " NAS — $left left. One VM disk is one LUN.\n";
+       . " NAS: $left left. One VM disk is one LUN.\n";
 }
 
 # ---------------------------------------------------------------------------
@@ -340,7 +340,7 @@ sub create {
         die "storage '" . $self->_storeid . "': a LUN named '$name' already"
           . " exists on the NAS. Not creating, and not touching it. If Proxmox"
           . " VE chose this name it means its view of the storage is"
-          . " incomplete — check Storage & Snapshots for a LUN this storage"
+          . " incomplete: check Storage & Snapshots for a LUN this storage"
           . " does not know about.\n";
     }
 
@@ -510,7 +510,7 @@ sub delete {
     my ($self, $index) = @_;
 
     my $r = $self->api->call(CGI_LUN, func => 'remove_lun', LUNIndex => $index);
-    die "storage '" . $self->_storeid . "': could not delete LUN $index —"
+    die "storage '" . $self->_storeid . "': could not delete LUN $index:"
       . " $r->{transport}\n" if $r->{transport};
 
     # Confirm absence rather than trusting the answer. QTS's `<result>` for this
@@ -525,7 +525,7 @@ sub delete {
       . " but it is still there\n"
         if defined $result && $result =~ /\A\d+\z/ && $result == 0;
 
-    die "storage '" . $self->_storeid . "': could not delete LUN $index — "
+    die "storage '" . $self->_storeid . "': could not delete LUN $index: "
       . PVE::Storage::Custom::QNAP::API::error_text($result) . "\n";
 }
 
@@ -561,7 +561,7 @@ sub unmap_from_target {
                       @{ $lun->{targets} };
 
     die "storage '" . $self->_storeid . "': could not unmap LUN $index from"
-      . " target $target_index — "
+      . " target $target_index: "
       . ($r->{transport}
          // PVE::Storage::Custom::QNAP::API::error_text($r->{result})) . "\n";
 }
@@ -610,7 +610,7 @@ sub snapshot_list {
         func => 'extra_get', snapshot_list => 1, LUNIndex => $index);
 
     die "storage '" . $self->_storeid . "': could not list snapshots of LUN"
-      . " $index — $r->{transport}\n" if $r->{transport};
+      . " $index: $r->{transport}\n" if $r->{transport};
 
     my $rows = PVE::Storage::Custom::QNAP::API::rows($r, '//SnapshotList/row');
 
@@ -686,7 +686,7 @@ sub snapshot_create {
     # snapshot named ..." — long after the moment anything could be done about
     # it.
     die "storage '" . $self->_storeid . "': the NAS refused to take snapshot"
-      . " '$name' of LUN $index — it answered 0, which this call reports as a"
+      . " '$name' of LUN $index: it answered 0, which this call reports as a"
       . " failure rather than as an identifier.\n" if $id == 0;
 
     return $id;
@@ -703,7 +703,7 @@ sub snapshot_delete {
              && $r->{result} == 0;
 
     die "storage '" . $self->_storeid . "': could not delete snapshot"
-      . " $snapshot_id — "
+      . " $snapshot_id: "
       . ($r->{transport}
          // PVE::Storage::Custom::QNAP::API::error_text($r->{result})) . "\n";
 }
@@ -739,7 +739,7 @@ sub snapshot_rollback {
     );
 
     die "storage '" . $self->_storeid . "': rolling LUN $index back to snapshot"
-      . " $snapshot_id failed — $r->{transport}\n" if $r->{transport};
+      . " $snapshot_id failed: $r->{transport}\n" if $r->{transport};
 
     my $result = $r->{result};
     my $forked = PVE::Storage::Custom::QNAP::API::text($r, 'fork');
@@ -754,12 +754,12 @@ sub snapshot_rollback {
         my $extra = '';
         # Two of this call's failure codes say something an
         # operator can act on, and neither is in the generic table.
-        $extra = ' The NAS could not unmount the volume — something is still'
+        $extra = ' The NAS could not unmount the volume: something is still'
                . ' using it.' if defined $result && $result eq '-14';
         $extra = ' The NAS could not take the safety snapshot it makes before'
                . ' reverting.' if defined $result && $result eq '-103';
         die "storage '" . $self->_storeid . "': rolling LUN $index back to"
-          . " snapshot $snapshot_id failed — "
+          . " snapshot $snapshot_id failed: "
           . PVE::Storage::Custom::QNAP::API::error_text($result) . ".$extra\n";
     }
 
@@ -814,7 +814,7 @@ sub clone_from_snapshot {
 
     my $r = $self->api->call(CGI_SNAP, %p);
     die "storage '" . $self->_storeid . "': cloning snapshot $opt{snapshot_id}"
-      . " to '$name' failed — $r->{transport}\n" if $r->{transport};
+      . " to '$name' failed: $r->{transport}\n" if $r->{transport};
 
     my $result = $r->{result};
     my $forked = PVE::Storage::Custom::QNAP::API::text($r, 'fork');
@@ -826,7 +826,7 @@ sub clone_from_snapshot {
     }
 
     die "storage '" . $self->_storeid . "': cloning snapshot"
-      . " $opt{snapshot_id} to '$name' failed — "
+      . " $opt{snapshot_id} to '$name' failed: "
       . PVE::Storage::Custom::QNAP::API::error_text($result) . "\n"
         if !defined $result || $result !~ /\A-?\d+\z/ || $result != 0;
 
@@ -835,7 +835,7 @@ sub clone_from_snapshot {
     my $lun = $self->get($name);
     die "storage '" . $self->_storeid . "': QTS reported cloning snapshot"
       . " $opt{snapshot_id} to '$name' but there is no LUN of that name on the"
-      . " NAS. Check Storage & Snapshots before retrying — a retry would make a"
+      . " NAS. Check Storage & Snapshots before retrying: a retry would make a"
       . " second clone.\n" if !defined $lun;
 
     return $lun;

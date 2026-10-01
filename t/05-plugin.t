@@ -13,7 +13,7 @@ BEGIN {
         or plan skip_all => 'Proxmox VE is not installed on this machine';
 }
 
-plan tests => 37;
+plan tests => 40;
 
 use PVE::Storage;
 use PVE::Storage::Custom::QNAPSANPlugin;
@@ -163,3 +163,36 @@ is($P->_existing_volumes_warning('qnap1', []), undef, 'nor does an empty one');
 # "Could not ask" must not become "somebody else's disks are there".
 is($P->_existing_volumes_warning('qnap1', undef), undef,
    'and a listing that could not be read is silence, not a warning');
+
+# ---------------------------------------------------------------------------
+# A CHAP secret that is not on disk yet still reaches the target
+# ---------------------------------------------------------------------------
+#
+# on_add_hook writes the credential store LAST, after every check that could
+# refuse the storage. So while it creates the target, the secret the operator
+# just typed exists only in the hook's arguments — and reading the store found
+# nothing, which the "username with no secret" guard then refused. Every
+# `pvesm add` that set CHAP failed. Found by driving the hook against a fake
+# NAS; nothing here reached it before.
+{
+    package FakeTarget;
+    sub new { return bless {}, shift }
+    sub ensure { my ($self, %o) = @_; return \%o }
+}
+{
+    require File::Temp;
+    no warnings 'redefine';
+    local *PVE::Storage::Custom::QNAPSANPlugin::_tgt = sub { FakeTarget->new };
+    # An empty store, which is what a storage being added for the first time has.
+    local $PVE::Storage::Custom::QNAPSANPlugin::CRED_DIR = File::Temp::tempdir(CLEANUP => 1);
+    my $cfg = { 'qnap-chap-username' => 'pve' };
+
+    my $got = $P->_ensure_target(undef, 'qnap1', $cfg, undef, { 'chap-password' => 'typed-just-now' });
+    is($got->{chap_password}, 'typed-just-now',
+       'the secret handed to the hook is the one the target is created with');
+    is($got->{chap_user}, 'pve', 'beside the username from the configuration');
+
+    $got = $P->_ensure_target(undef, 'qnap1', $cfg, undef);
+    is($got->{chap_password}, undef,
+       'without it the store is read, and before the first add the store is empty');
+}

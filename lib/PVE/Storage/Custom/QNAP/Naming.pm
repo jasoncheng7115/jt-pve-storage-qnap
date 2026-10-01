@@ -216,9 +216,9 @@ sub assert_qts_legal {
     my $shown = defined $name ? $name : '(undef)';
     my ($bad) = defined $name ? ($name =~ /([^A-Za-z0-9._-])/) : ();
     die "storage: the LUN name '$shown' cannot be sent to QTS"
-      . (defined $bad ? " — it contains '$bad'"
-       : !defined $name || !length $name ? " — it is empty"
-       : " — it does not start with a letter or digit")
+      . (defined $bad ? ": it contains '$bad'"
+       : !defined $name || !length $name ? ": it is empty"
+       : ": it does not start with a letter or digit")
       . ". This plugin sends letters, digits, '-', '.' and '_' only.\n";
 }
 

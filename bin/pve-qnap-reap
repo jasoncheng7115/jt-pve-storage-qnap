@@ -32,7 +32,7 @@ use lib '/usr/share/perl5';
 use PVE::Storage;
 use PVE::Storage::Custom::QNAPSANPlugin;
 
-my $VERSION = '0.1.0';
+my $VERSION = '0.6.0';
 
 my ($remove, $all, $show_version, $help);
 my @storages;
@@ -50,7 +50,7 @@ usage(0) if $help;
 sub usage {
     my ($rc) = @_;
     print <<'EOF';
-pve-qnap-reap — remove this node's leftovers for LUNs the NAS no longer has.
+pve-qnap-reap: remove this node's leftovers for LUNs the NAS no longer has.
 
   pve-qnap-reap [--storage <id>]... [--all] [--remove]
 
@@ -59,7 +59,7 @@ pve-qnap-reap — remove this node's leftovers for LUNs the NAS no longer has.
   --remove    actually flush the maps. Without it, nothing is changed.
   --version
 
-Run it on the node that has the leftovers — a node that a VM was migrated AWAY
+Run it on the node that has the leftovers: a node that a VM was migrated AWAY
 from is the usual one. It never touches a device that is in use, and it refuses
 rather than guessing when it cannot tell.
 EOF
@@ -122,7 +122,7 @@ if (!$remove) {
     print "\nNothing was changed. Add --remove to act on the above.\n";
 } else {
     print "\n$acted item(s) cleaned up.\n";
-    print "$skipped skipped — see the reasons above. A skipped item is one this"
+    print "$skipped skipped: see the reasons above. A skipped item is one this"
         . " tool could not prove was safe to touch, which is deliberate.\n"
         if $skipped;
 }

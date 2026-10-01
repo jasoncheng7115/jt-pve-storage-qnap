@@ -19,8 +19,8 @@ Recommends: sg3-utils, psmisc, lsscsi
 Description: QNAP NAS storage plugin for Proxmox VE
  A Proxmox VE custom storage plugin for QNAP QTS and QuTS hero over iSCSI, in
  which one VM disk is one thin LUN on the NAS, so the NAS's own snapshots and
- clones act on the unit an operator thinks about — no LVM layer and no shared
- LUN carved up locally.
+ clones act on the unit an operator thinks about. There is no LVM layer and no
+ shared LUN carved up locally.
  .
  Registers the storage type "qnapsan". It requires Storage Manager V2, which
  QTS 4.5.1 and every QuTS hero provide; the plugin refuses a firmware that

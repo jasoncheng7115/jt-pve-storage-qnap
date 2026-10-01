@@ -246,7 +246,7 @@ sub properties {
             type => 'string',
         },
         'qnap-pool' => {
-            description => "Storage pool ID that holds the LUNs — the number"
+            description => "Storage pool ID that holds the LUNs: the number"
                          . " Storage & Snapshots shows, e.g. 1.",
             type => 'integer', minimum => 1,
         },
@@ -266,7 +266,7 @@ sub properties {
         'qnap-chap-username' => {
             description => "CHAP username. This plugin does not set up"
                          . " per-initiator access on the target, so CHAP is the"
-                         . " access control it relies on — set it unless the"
+                         . " access control it relies on: set it unless the"
                          . " NAS is on a storage-only network.",
             type => 'string', optional => 1,
         },
@@ -453,12 +453,20 @@ sub _chap {
     );
 }
 
+# `$creds` is for the one caller that holds secrets which are not on disk yet.
+#
+# on_add_hook writes the credential store LAST, after every check that could
+# refuse the storage — so while it is creating the target, the CHAP secret the
+# operator just typed exists only in the hook's arguments. Reading the store
+# here found nothing, and the "username with no secret" guard then refused
+# every `pvesm add` that set CHAP: the configuration this plugin recommends.
+# Found by driving the hook against a fake NAS; no unit test reached it.
 sub _ensure_target {
-    my ($class, $api, $storeid, $scfg, $volname) = @_;
+    my ($class, $api, $storeid, $scfg, $volname, $creds) = @_;
     my $tgt = $class->_tgt($api);
     return $tgt->ensure(
         name => $class->_target_name($storeid, $scfg, $volname),
-        $class->_chap($storeid, $scfg),
+        $class->_chap($storeid, $scfg, $creds),
     );
 }
 
@@ -537,7 +545,7 @@ sub on_add_hook {
     # Create the storage's target now rather than at the first allocation, so
     # that a NAS which refuses it — the target ceiling, a name QTS will not take
     # — says so while the operator is still adding the storage.
-    my $t = $class->_ensure_target($api, $storeid, $scfg, undef);
+    my $t = $class->_ensure_target($api, $storeid, $scfg, undef, \%creds);
     print "storage '$storeid': using iSCSI target '$t->{name}' ($t->{iqn}).\n";
 
     warn "storage '$storeid': no CHAP is configured. This plugin does not set"
@@ -637,7 +645,7 @@ sub on_delete_hook {
         # A target with LUNs still on it is not ours to remove, whatever its
         # name suggests — and the LUNs would be left mapped to nothing.
         if ($info && @{ $info->{lun_indexes} // [] }) {
-            warn "storage '$storeid': leaving target '$name' in place — it"
+            warn "storage '$storeid': leaving target '$name' in place: it"
                . " still has " . scalar(@{ $info->{lun_indexes} })
                . " LUN(s) mapped to it.\n";
             next;
@@ -903,7 +911,7 @@ sub volume_size_info {
     my $err = $@;
     eval { $api->logout };
 
-    die "storage '$storeid': could not read the size of '$name' — $err" if $err;
+    die "storage '$storeid': could not read the size of '$name': $err" if $err;
     die "storage '$storeid': there is no LUN named '$name' on the NAS\n" if !$obj;
     die "storage '$storeid': the NAS reports no capacity for '$name'\n"
         if !defined $obj->{size};
@@ -933,7 +941,7 @@ sub volume_export {
       . " '$format')\n" if $format ne 'raw+size';
     die "storage '$storeid': a QNAP LUN cannot be exported together with its"
       . " snapshots\n" if $with_snapshots;
-    die "storage '$storeid': exporting from a snapshot is not supported — roll"
+    die "storage '$storeid': exporting from a snapshot is not supported: roll"
       . " back to it, or clone it into a disk of its own first\n"
         if defined $snapshot || defined $base_snapshot;
 
@@ -1137,7 +1145,7 @@ sub reap_orphans {
         push @report, { wwid => $wwid, volname => $state->volname_for($wwid) // '?',
                         action => $dry ? 'would untrack' : 'untracked',
                         reason => 'the LUN still exists but nothing is attached here'
-                                . ' — a tracking entry left by a crash' };
+                                . ': a tracking entry left by a crash' };
         $state->untrack($wwid) if !$dry;
     }
 
@@ -1158,7 +1166,7 @@ sub reap_orphans {
         if (!defined $in_use) {
             push @report, { wwid => $wwid, volname => $volname, action => 'skipped',
                             reason => "could not determine whether $path is in use"
-                                    . " — refusing rather than guessing" };
+                                    . ": refusing rather than guessing" };
             next;
         }
         if ($in_use) {
@@ -1207,7 +1215,7 @@ sub deactivate_storage {
     warn "storage '$storeid': could not reap orphaned devices: $@" if $@;
     for my $r (@{ $reaped // [] }) {
         print "storage '$storeid': $r->{action} orphan $r->{volname}"
-            . " ($r->{wwid}) — $r->{reason}\n";
+            . " ($r->{wwid}): $r->{reason}\n";
     }
 
     my $tracked = eval { $state->tracked } // {};
@@ -1635,7 +1643,7 @@ sub activate_volume {
             next;
         }
         if (!$is) {
-            warn "storage '$storeid': $dev is NOT '$name' — QTS reuses a LUN's"
+            warn "storage '$storeid': $dev is NOT '$name': QTS reuses a LUN's"
                . " number within a target and this is a stale device."
                . " Ignoring it.\n";
             next;
@@ -1765,12 +1773,12 @@ sub _assert_not_in_use {
 
     my $in_use = PVE::Storage::Custom::QNAP::Multipath::is_device_in_use($path);
 
-    die "storage '$storeid': refusing to $what this disk — could not establish"
+    die "storage '$storeid': refusing to $what this disk: could not establish"
       . " whether anything on this node is using $path. That is not the same as"
       . " 'nothing is', and this operation destroys data. Check with"
       . " 'fuser -vm $path' and try again.\n" if !defined $in_use;
 
-    die "storage '$storeid': refusing to $what this disk — $path is IN USE on"
+    die "storage '$storeid': refusing to $what this disk: $path is IN USE on"
       . " this node. Stop whatever is using it first ('fuser -vm $path' will"
       . " say what).\n" if $in_use;
 
@@ -1888,7 +1896,7 @@ sub _grow_node_device {
       . " node's multipath map '$map' is presenting $have after "
       . PVE::Storage::Custom::QNAP::Multipath::RESIZE_SETTLE_TIMEOUT
       . "s. $why The guest has NOT been given the new space. Nothing is damaged"
-      . " and the NAS is correct — refresh the node with 'multipathd resize map"
+      . " and the NAS is correct: refresh the node with 'multipathd resize map"
       . " $map' and run the resize again to the same size.\n";
 
     die $msg if $opt{fatal};
@@ -1953,7 +1961,20 @@ sub volume_snapshot_delete {
                        @{ $lun->snapshot_list($obj->{index}) };
     if (!$found) { eval { $api->logout }; return 1 }
 
-    $lun->snapshot_delete($found->{id});
+    eval { $lun->snapshot_delete($found->{id}) };
+    if (my $err = $@) {
+        $err =~ s/\s+\z//;
+        # On QuTS hero a disk cloned FROM this snapshot shares its blocks, and
+        # the NAS will not remove a snapshot something still hangs off. Offered
+        # as a possibility after the NAS's own answer, never as a finding.
+        my $hint = eval { $api->is_zfs }
+            ? "\n  One possible cause on QuTS hero is a disk that was cloned from"
+            . " this snapshot: it shares the snapshot's blocks, so the snapshot"
+            . " cannot go while that disk exists."
+            : '';
+        eval { $api->logout };
+        die "$err$hint\n";
+    }
     eval { $api->logout };
     return 1;
 }
@@ -2006,7 +2027,7 @@ sub _do_rollback {
     my $flushed = defined $wwid
         ? PVE::Storage::Custom::QNAP::Multipath::flush_device_cache($wwid)
         : undef;
-    die "storage '$storeid': refusing to roll back — this node has the device"
+    die "storage '$storeid': refusing to roll back: this node has the device"
       . " for this disk but its host cache could not be flushed, so dirty pages"
       . " could be written back on top of the restored snapshot. Check that"
       . " blockdev is installed and runnable on this node.\n"

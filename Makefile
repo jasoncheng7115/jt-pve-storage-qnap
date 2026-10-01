@@ -1,9 +1,9 @@
 PACKAGE = jt-pve-storage-qnap
 
 # Versioning: the patch number increments per release and runs to .99 before
-# the minor number moves — 0.1.0, 0.1.1, ... 0.1.99, then 0.2.0. Keep this in
+# the minor number moves: 0.6.0, 0.6.1, ... 0.6.99, then 0.7.0. Keep this in
 # step with debian/changelog; release-check refuses when they disagree.
-VERSION = 0.1.0
+VERSION = 0.6.0
 
 DESTDIR =
 PREFIX   = /usr
@@ -23,6 +23,7 @@ GUARD_PATHS = lib bin debian docs t $(wildcard tools) Makefile README.md README_
 .PHONY: all install uninstall test syntax unit \
         check-multipath-flush check-secrets check-tool-paths critic \
         og-image check-og-image check-site check-bilingual check-publish \
+        check-zh check-docs-public \
         release-check deb clean
 
 all:
@@ -244,7 +245,27 @@ check-publish:
 		echo "  skipped: the checker is a maintainer's tool, not in the repository."; \
 	fi
 
-release-check: test critic check-og-image check-site check-bilingual check-publish
+# The Chinese documents follow rules that cannot be seen in an editor: no hard
+# wrapping, no italics, no space after full-width punctuation, no dashes.
+# Maintainer's tools again, skipped when absent.
+check-zh:
+	@echo "Checking the Chinese documents..."
+	@if [ -f tools/check-zh-markdown.pl ]; then \
+		perl tools/check-zh-markdown.pl; \
+	else \
+		echo "  skipped: the checker is a maintainer's tool, not in the repository."; \
+	fi
+
+check-docs-public:
+	@echo "Checking the published documents..."
+	@if [ -f tools/check-docs-public.pl ]; then \
+		perl tools/check-docs-public.pl docs/*.md docs/index.html README.md README_zh-TW.md \
+		                                 CHANGELOG.md CHANGELOG_zh-TW.md; \
+	else \
+		echo "  skipped: the checker is a maintainer's tool, not in the repository."; \
+	fi
+
+release-check: test critic check-og-image check-site check-bilingual check-zh check-docs-public check-publish
 	@echo "Checking version consistency..."
 	@deb_version=$$(dpkg-parsechangelog --show-field Version 2>/dev/null \
 		| sed 's/-[0-9]*$$//'); \

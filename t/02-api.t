@@ -6,7 +6,7 @@
 
 use strict;
 use warnings;
-use Test::More tests => 33;
+use Test::More tests => 41;
 
 use PVE::Storage::Custom::QNAP::API;
 my $A = 'PVE::Storage::Custom::QNAP::API';
@@ -158,6 +158,61 @@ is(PVE::Storage::Custom::QNAP::API::cgi_name('disk/snapshot.cgi'), 'snapshot.cgi
 is(PVE::Storage::Custom::QNAP::API::cgi_name('snapshot.cgi'), 'snapshot.cgi',
    'and a bare name is left alone');
 is(PVE::Storage::Custom::QNAP::API::cgi_name(undef), undef, 'undef stays undef');
+
+# ---------------------------------------------------------------------------
+# A GET is sent for ONE reason, and a healthy NAS never gives it
+# ---------------------------------------------------------------------------
+#
+# The fallback exists for a firmware whose CGIs do not read a POST body. It
+# used to fire on any answer without a `<result>` — and the NAS's own
+# description, and a forked operation still running, are two healthy answers
+# with none. So an ordinary NAS was sent a GET, sid in the URL, on each of
+# those. The only trigger now is a session that was issued a moment ago and is
+# still not recognised.
+{
+    my (@sent, @answers);
+    no warnings 'redefine';
+    local *PVE::Storage::Custom::QNAP::API::login  = sub { $_[0]{sid} = 'fresh'; 1 };
+    local *PVE::Storage::Custom::QNAP::API::logout = sub { $_[0]{sid} = undef; return };
+    local *PVE::Storage::Custom::QNAP::API::_do_call = sub {
+        my ($self, $cgi, $params, $method) = @_;
+        push @sent, ($method // 'POST');
+        return shift @answers;
+    };
+    my @warned;
+    local $SIG{__WARN__} = sub { push @warned, $_[0] };
+    my $c = PVE::Storage::Custom::QNAP::API->new(
+        portals => '192.0.2.1', username => 'pve', password => 'x', storeid => 'getrule');
+
+    my $described  = sub { parse('<authPassed>1</authPassed><model><modelName>X</modelName></model>') };
+    my $processing = sub { parse('<authPassed>1</authPassed><processing>1</processing>') };
+    my $refused    = sub { parse('<authPassed>0</authPassed>') };
+    my $done       = sub { parse('<authPassed>1</authPassed><result>0</result>') };
+
+    @sent = (); @answers = ($described->());
+    $c->call('authLogin.cgi');
+    is_deeply(\@sent, [ 'POST' ], "the NAS's description has no <result>, and no GET follows it");
+
+    @sent = (); @answers = ($processing->());
+    $c->call('disk/snapshot.cgi', func => 'get_return', cginame => 'snapshot.cgi');
+    is_deeply(\@sent, [ 'POST' ], 'nor does one follow a forked operation that is still running');
+
+    @sent = (); @answers = ($refused->(), $done->());
+    my $r = $c->call('disk/x.cgi', func => 'f');
+    is_deeply(\@sent, [ 'POST', 'POST' ], 'an expired session is a new login and the same POST again');
+    is($r->{result}, '0', 'and its answer is the one returned');
+
+    @sent = (); @answers = ($refused->(), $refused->(), $done->());
+    $r = $c->call('disk/x.cgi', func => 'f');
+    is_deeply(\@sent, [ 'POST', 'POST', 'GET' ],
+       'a fresh session that is STILL not recognised is the body not being read: only then a GET');
+    is($r->{result}, '0', 'whose answer is used');
+    is(scalar(grep { /did not read the POST/ } @warned), 1, 'and it is said out loud');
+
+    @sent = (); @answers = ($refused->(), $refused->(), $done->());
+    $c->call('disk/x.cgi', func => 'f', CHAPPasswd => 'secret', _secret => 1);
+    is_deeply(\@sent, [ 'POST', 'POST' ], 'but NEVER for a call that carries a secret');
+}
 
 # ---------------------------------------------------------------------------
 # Error text

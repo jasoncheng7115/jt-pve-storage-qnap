@@ -84,7 +84,7 @@ use constant {
 
     # Bumped whenever the drop-in's content changes, so an upgrade can tell
     # whether the file on disk is this version's.
-    CONF_VERSION => 1,
+    CONF_VERSION => 2,
 };
 
 # ---------------------------------------------------------------------------
@@ -117,7 +117,7 @@ sub conf_content {
 # configuration changes.
 #
 # multipathd ships no built-in entry for QNAP, so without this stanza a QNAP
-# LUN falls back to the generic defaults — which include no_path_retry "queue",
+# LUN falls back to the generic defaults. Those include no_path_retry "queue",
 # and queueing forever is not a failure mode anyone can recover from without a
 # reboot.
 devices {

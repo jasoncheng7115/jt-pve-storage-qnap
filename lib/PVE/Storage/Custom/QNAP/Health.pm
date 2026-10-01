@@ -131,7 +131,7 @@ sub status {
     if ($threw) {
         chomp $threw;
         _warn_once("$storeid:unreachable",
-            "storage '$storeid': the NAS did not answer — $threw\n");
+            "storage '$storeid': the NAS did not answer: $threw\n");
         return (0, 0, 0, 0);
     }
 
@@ -142,8 +142,8 @@ sub status {
         # wrong half the time.
         _warn_once("$storeid:nopool",
             "storage '$storeid': the NAS did not describe storage pool"
-          . " '$pool_id'. Either qnap-pool names a pool that does not exist —"
-          . " Storage & Snapshots shows the number — or the NAS could not be"
+          . " '$pool_id'. Either qnap-pool names a pool that does not exist"
+          . " (Storage & Snapshots shows the number) or the NAS could not be"
           . " reached.\n");
         return (0, 0, 0, 0);
     }
@@ -175,7 +175,7 @@ sub status {
     }
     if (defined $st && $st =~ /\A[1-9]\d*\z/) {
         _warn_once("$storeid:poolbusy",
-            "storage '$storeid': storage pool '$pool_id' reports status $st —"
+            "storage '$storeid': storage pool '$pool_id' reports status $st:"
           . " the NAS is working on it (rebuilding, expanding or resyncing)."
           . " The storage is still usable and performance may be reduced.\n");
     }
@@ -215,7 +215,7 @@ sub lun_pressure {
           . " free. The count includes LUNs this storage does not own.\n");
     } elsif ($left <= 16) {
         _warn_once("$storeid:lunnear",
-            "storage '$storeid': $have of $max LUNs used on this NAS — $left"
+            "storage '$storeid': $have of $max LUNs used on this NAS: $left"
           . " left. One VM disk is one LUN.\n");
     }
     return;
