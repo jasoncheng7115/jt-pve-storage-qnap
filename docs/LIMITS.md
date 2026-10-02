@@ -19,7 +19,7 @@ than capacity:
 
 Every figure on this page is quoted from a page QNAP publishes, with the URL.
 Nothing is interpolated, and **none of it has been measured by this project**:
-this plugin has not yet worked against a NAS.
+so far this plugin has been tested on one QNAP NAS.
 
 ---
 

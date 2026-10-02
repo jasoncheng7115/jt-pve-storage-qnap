@@ -1,7 +1,7 @@
 # Changelog
 
-Every 0.x release is a prerelease. **This plugin has not yet worked against a
-QNAP NAS.**
+Every 0.x release is a prerelease. **So far this plugin has been tested on
+one QNAP NAS.**
 
 The register of what has been verified against real hardware, and what has not,
 is [docs/TESTING.md](docs/TESTING.md). It is more useful than this file for

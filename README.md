@@ -17,11 +17,11 @@ Clone · Multipath. Registers the storage type **`qnapsan`**.
 
 ---
 
-## ⚠️ NOT YET TESTED ON HARDWARE
+## ⚠️ TESTED ON ONE QNAP NAS SO FAR
 
-**This plugin has not yet worked against a real QNAP NAS.**
+**So far this plugin has been tested on one QNAP NAS.**
 
-It has been run against one, on QuTS hero h6.0.1, and it does not work there:
+That NAS ran QuTS hero h6.0.1, and the plugin does not work there:
 **QuTS hero h6.0 and later are not supported**, and the plugin refuses them when
 the storage is added. On the firmware it is written for (QTS 5.1 and QuTS hero
 h5.1) it has never been run.
@@ -54,8 +54,8 @@ measurement to replace it with.
 
 ## Which Proxmox VE operations work
 
-Implemented and unit-tested, **not yet driven on hardware**, for virtual
-machines and for containers.
+Implemented and unit-tested, for virtual machines and for containers. Testing on
+real hardware covers one NAS so far.
 
 A container's disk is the same object as a virtual machine's: one thin LUN, one
 multipath device. The difference is what sits on top. Proxmox VE puts a

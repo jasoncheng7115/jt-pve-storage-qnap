@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>jt-pve-storage-qnap -- QNAP NAS storage plugin for Proxmox VE</title>
-<meta name="description" content="A Proxmox VE storage plugin for QNAP QTS and QuTS hero over iSCSI: one VM disk is one thin LUN, so the NAS's own snapshots, rollback and clones act on the unit an operator thinks about. Not yet tested on hardware, with an honest register of what is verified and what is not. An independent project, not developed or endorsed by QNAP. MIT License.">
+<meta name="description" content="A Proxmox VE storage plugin for QNAP QTS and QuTS hero over iSCSI: one VM disk is one thin LUN, so the NAS's own snapshots, rollback and clones act on the unit an operator thinks about. Tested on one QNAP NAS so far, with an honest register of what is verified and what is not. An independent project, not developed or endorsed by QNAP. MIT License.">
 
 <meta property="og:type" content="website">
 <meta property="og:title" content="jt-pve-storage-qnap">
@@ -170,11 +170,11 @@ function pickLang() {
     <div class="untested__inner">
         <div class="untested__title">
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            <span class="lang-en">NOT YET TESTED ON HARDWARE</span><span class="lang-zh">尚未實機測試</span>
+            <span class="lang-en">TESTED ON ONE QNAP NAS SO FAR</span><span class="lang-zh">目前只在一台 QNAP NAS 上測過</span>
         </div>
         <div class="untested__body">
-            <span class="lang-en"><strong>This plugin has not yet worked against a real QNAP NAS.</strong> It has been run against one, on QuTS hero h6.0.1, and it does not work there: QuTS hero h6.0 and later are not supported. On the firmware it is written for it has never been run. It is written from the API documentation alone. It compiles, passes 247 unit tests and has been driven against a simulated NAS, and none of that proves it works on your NAS. <strong>Do not put production data on it.</strong> Run it against a spare NAS, or a pool you are willing to lose, and <a href="#status">read what is still unanswered</a> first.</span>
-            <span class="lang-zh"><strong>這個 plugin 還沒有在任何實體 QNAP NAS 上正常運作過。</strong>它在實機上執行過一次，韌體是 QuTS hero h6.0.1，結果是無法使用：不支援 QuTS hero h6.0 以上。它所針對的韌體還沒有在實機上執行過。它完全是依照 API 文件寫成的。它可以編譯，通過 247 個單元測試，也對模擬的 NAS 跑過完整的操作流程，但這些都不能證明它在你的 NAS 上能正常運作。<strong>請不要放正式資料。</strong>請用一台備用 NAS、或一個可以捨棄的儲存集區來測試，並先<a href="#status">確認還有哪些項目尚未驗證</a>。</span>
+            <span class="lang-en"><strong>So far this plugin has been tested on one QNAP NAS.</strong> That NAS ran QuTS hero h6.0.1, and the plugin does not work there: QuTS hero h6.0 and later are not supported. On the firmware it is written for it has never been run. It is written from the API documentation alone. It compiles, passes 247 unit tests and has been driven against a simulated NAS, and none of that proves it works on your NAS. <strong>Do not put production data on it.</strong> Run it against a spare NAS, or a pool you are willing to lose, and <a href="#status">read what is still unanswered</a> first.</span>
+            <span class="lang-zh"><strong>目前只在一台 QNAP NAS 上測過。</strong>那台 NAS 的韌體是 QuTS hero h6.0.1，結果是無法使用：不支援 QuTS hero h6.0 以上。它所針對的韌體還沒有在實機上執行過。它完全是依照 API 文件寫成的。它可以編譯，通過 247 個單元測試，也對模擬的 NAS 跑過完整的操作流程，但這些都不能證明它在你的 NAS 上能正常運作。<strong>請不要放正式資料。</strong>請用一台備用 NAS、或一個可以捨棄的儲存集區來測試，並先<a href="#status">確認還有哪些項目尚未驗證</a>。</span>
         </div>
     </div>
 </div>
@@ -183,7 +183,7 @@ function pickLang() {
     <h2 class="section-title"><span class="lang-en">Read this first</span><span class="lang-zh">請先讀這個</span></h2>
 
     <div class="alert alert--danger">
-        <strong><span class="lang-en">This has not worked against a QNAP NAS yet.</span><span class="lang-zh">這個版本尚未在實體 QNAP NAS 上正常運作過。</span></strong><br>
+        <strong><span class="lang-en">Tested on one QNAP NAS so far.</span><span class="lang-zh">目前只在一台 QNAP NAS 上測過。</span></strong><br>
         <span class="lang-en">Every 0.x release is a prerelease. The one real NAS it has met ran QuTS hero h6.0.1, which is not supported: it refused to create a target or a LUN. Nothing has been answered by a NAS on supported firmware yet, and every open item is listed in <a href="https://github.com/jasoncheng7115/jt-pve-storage-qnap/blob/main/docs/TESTING.md">TESTING.md</a> in the order it should be settled. Do not put data you care about on this yet.</span>
         <span class="lang-zh">0.x 全部都是預覽版本。目前唯一遇過的實機是 QuTS hero h6.0.1，這個韌體不支援：NAS 拒絕建立 target 與 LUN。受支援的韌體還沒有任何一台 NAS 回應過。所有待驗證項目都依處理順序列在 <a href="https://github.com/jasoncheng7115/jt-pve-storage-qnap/blob/main/docs/TESTING_zh-TW.md">TESTING_zh-TW.md</a>。請先不要把重要資料放上來。</span>
     </div>
@@ -211,8 +211,8 @@ function pickLang() {
 <section class="doc-section" id="features">
     <h2 class="section-title"><span class="lang-en">Which Proxmox VE operations work</span><span class="lang-zh">支援的 Proxmox VE 操作</span></h2>
     <p class="section-subtitle">
-        <span class="lang-en">Implemented and unit-tested, <strong>not yet driven on hardware</strong>, for virtual machines and for containers. The rows that are not a plain yes say why.</span>
-        <span class="lang-zh">已實作並通過單元測試，<strong>但尚未在實機上執行過</strong>，虛擬機與容器都一樣。不是單純「支援」的那幾列，都寫出原因。</span>
+        <span class="lang-en">Implemented and unit-tested, for virtual machines and for containers. Testing on real hardware covers one NAS so far. The rows that are not a plain yes say why.</span>
+        <span class="lang-zh">已實作並通過單元測試，虛擬機與容器都一樣。實機測試目前只有一台 NAS。不是單純「支援」的那幾列，都寫出原因。</span>
     </p>
     <p>
         <span class="lang-en">A container's disk is the same object as a virtual machine's: one thin LUN, one multipath device. The difference is what sits on top. Proxmox VE puts a filesystem on a container's LUN and mounts it <em>on the host</em>, where a VM's disk is handed to the guest whole. That is why two rows below differ, and only two.</span>

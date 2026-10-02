@@ -2,8 +2,8 @@
 
 Read this before you put data on this storage.
 
-**This plugin has not yet worked against a QNAP NAS.** It has been run against
-one, on QuTS hero h6.0.1, where it does not work. On the firmware it is written
+**So far this plugin has been tested on one QNAP NAS.** That NAS ran QuTS hero
+h6.0.1, where the plugin does not work. On the firmware it is written
 for, nothing has been exercised yet. Every release in the 0.x series is a
 prerelease and this page is the honest account of where that stands. The related projects in this family
 (`jt-pve-storage-synology`, `-netapp`, `-purestorage`, `-dellemc`) reached
