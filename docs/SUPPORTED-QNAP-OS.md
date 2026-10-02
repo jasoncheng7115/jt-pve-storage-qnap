@@ -2,7 +2,7 @@
 
 Short version: **QTS 5.1 and QuTS hero h5.1 are what it is written against.**
 Anything older than QTS 4.5.1 is refused when the storage is added, not
-discovered later. **QuTS hero h6.0 and later are not supported**, and are
+discovered later. **QuTS hero h6.0 and later are not supported yet**, and are
 refused the same way.
 
 This page is deliberately specific about the difference between *supported*,
@@ -51,7 +51,7 @@ pve-qnap-api-probe --host <nas> --user admin --insecure
 | **QuTS hero** | **h5.1.x** | **Supported** | ZFS. Instant clones, so a Proxmox VE linked clone is instant |
 | QuTS hero | h5.2.x | Expected to work | Not verified |
 | QuTS hero | h4.5.x to h5.0.x | Expected to work | Not verified |
-| QuTS hero | h6.0 and later | **Not supported** | Measured on h6.0.1. Refused at `pvesm add`. See section 3 |
+| QuTS hero | h6.0 and later | **Not supported yet** | Measured on h6.0.1. Refused at `pvesm add`. See section 3 |
 | QuTScloud | any | **Not supported** | A cloud image with no local storage pools of this shape |
 | QNE Network OS | any | **Not supported** | A different product; it has no Storage Manager |
 | QTS on a TR-series expansion unit | any | n/a | An expansion unit is not a NAS |
@@ -62,7 +62,7 @@ combination.
 
 ---
 
-## 3. QuTS hero h6.0 and later: not supported
+## 3. QuTS hero h6.0 and later: not supported yet
 
 This is the one entry in the matrix that was measured rather than read. The
 plugin was run against a NAS on QuTS hero h6.0.1:

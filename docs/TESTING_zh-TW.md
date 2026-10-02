@@ -2,7 +2,7 @@
 
 把資料放到這個 storage 之前，請先讀這一頁。
 
-**目前只在一台 QNAP NAS 上測過**。不支援 QuTS hero h6.0 以上。0.x 系列的每一個版本都是預覽版，這一頁說明目前的實際狀況。相關專案（`jt-pve-storage-synology`、`-netapp`、`-purestorage`、`-dellemc`）是靠實際量測儲存設備、把實際行為記錄下來才穩定的，這個專案才剛開始這個過程。
+**目前只在一台 QNAP NAS 上測過**。QuTS hero h6.0 以上尚未支援。0.x 系列的每一個版本都是預覽版，這一頁說明目前的實際狀況。相關專案（`jt-pve-storage-synology`、`-netapp`、`-purestorage`、`-dellemc`）是靠實際量測儲存設備、把實際行為記錄下來才穩定的，這個專案才剛開始這個過程。
 
 ## 具體來說
 
@@ -28,7 +28,7 @@
 | `pvesm add` 時建立 storage 的 iSCSI target | **被 NAS 拒絕** |
 | 建立 LUN | **被 NAS 拒絕** |
 
-所以 QuTS hero h6.0 以上不支援，從 0.6.1 開始，新增 storage 時 plugin 會直接拒絕。見 [SUPPORTED-QNAP-OS_zh-TW.md](SUPPORTED-QNAP-OS_zh-TW.md)。
+所以 QuTS hero h6.0 以上尚未支援，從 0.6.1 開始，新增 storage 時 plugin 會直接拒絕。見 [SUPPORTED-QNAP-OS_zh-TW.md](SUPPORTED-QNAP-OS_zh-TW.md)。
 
 這次執行沒有解決下面任何一個項目。沒有建立任何 LUN，所以沒有看到裝置、WWID 或 vendor 字串，而且那個韌體不在這個 plugin 的支援範圍內。
 
@@ -52,7 +52,7 @@
 
 6. **倒回之後，LUN 的 NAA 會維持不變嗎**？plugin 會檢查，一旦改變就明確拒絕，因為那代表每個節點上的裝置識別都變了。相關專案的任何儲存設備上都還沒有發生過這種情況。
 
-7. **`authLogin.cgi` 是否接受 POST**？這個 plugin 的每一個呼叫都是 POST，憑證不會出現在 URL 裡。如果剛取得的工作階段在另一支 CGI 仍然不被承認，plugin 會判斷韌體沒有讀取 POST 內容，改用 GET 重送那一個呼叫，但只限不含密碼的呼叫。**登入絕不會用 GET 送出**，所以只讀取查詢字串的韌體完全無法使用。這是第一次上機最可能失敗的原因。在 QuTS hero h6.0.1 上，以 POST 送出的登入是被接受的。那個韌體不支援，所以對受支援的韌體來說，這個問題仍然沒有答案。
+7. **`authLogin.cgi` 是否接受 POST**？這個 plugin 的每一個呼叫都是 POST，憑證不會出現在 URL 裡。如果剛取得的工作階段在另一支 CGI 仍然不被承認，plugin 會判斷韌體沒有讀取 POST 內容，改用 GET 重送那一個呼叫，但只限不含密碼的呼叫。**登入絕不會用 GET 送出**，所以只讀取查詢字串的韌體完全無法使用。這是第一次上機最可能失敗的原因。在 QuTS hero h6.0.1 上，以 POST 送出的登入是被接受的。那個韌體尚未支援，所以對受支援的韌體來說，這個問題仍然沒有答案。
 
 8. **同時執行**。`get_return` 是以 CGI 名稱而不是以工作為依據，所以同時進行的複製與倒回無法區分。因此 plugin 在同一台 NAS 上一次只執行一個，範圍是整個叢集：第一個還在執行時，第二個會被拒絕。需要確認 NAS 上有沒有別的來源（排程快照、網頁介面）也使用同一個管道。`get_return` 的 `cginame` 應該送什麼也還沒有實測：plugin 送的是 `snapshot.cgi`，如果 QTS 要的是別的寫法，複製或倒回就永遠拿不到結果。
 

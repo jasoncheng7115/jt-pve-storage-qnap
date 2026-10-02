@@ -1,6 +1,6 @@
 # 這個 plugin 支援的 QNAP 作業系統
 
-簡要來說，**它是針對 QTS 5.1 與 QuTS hero h5.1 撰寫的**。比 QTS 4.5.1 更舊的版本，會在新增 storage 時直接被拒絕，不會等到之後才發現。**QuTS hero h6.0 以上不支援**，同樣會在新增時被拒絕。
+簡要來說，**它是針對 QTS 5.1 與 QuTS hero h5.1 撰寫的**。比 QTS 4.5.1 更舊的版本，會在新增 storage 時直接被拒絕，不會等到之後才發現。**QuTS hero h6.0 以上尚未支援**，同樣會在新增時被拒絕。
 
 這一頁把「支援」、「應可運作」與「不支援」分開說明，因為前後兩個是確定的答案，中間那個不是。
 
@@ -41,7 +41,7 @@ pve-qnap-api-probe --host <nas> --user admin --insecure
 | **QuTS hero** | **h5.1.x** | **支援** | ZFS。可以使用即時複製，所以 Proxmox VE 的連結複製會立即完成 |
 | QuTS hero | h5.2.x | 應可運作 | 尚未驗證 |
 | QuTS hero | h4.5.x 至 h5.0.x | 應可運作 | 尚未驗證 |
-| QuTS hero | h6.0 以上 | **不支援** | 已在 h6.0.1 上量測過。`pvesm add` 會直接拒絕。見第三節 |
+| QuTS hero | h6.0 以上 | **尚未支援** | 已在 h6.0.1 上量測過。`pvesm add` 會直接拒絕。見第三節 |
 | QuTScloud | 任何版本 | **不支援** | 雲端映像檔，沒有這種形式的本機儲存集區 |
 | QNE Network OS | 任何版本 | **不支援** | 不同的產品，沒有 Storage Manager |
 | TR 系列擴充櫃上的 QTS | 任何版本 | 不適用 | 擴充櫃不是 NAS |
@@ -50,7 +50,7 @@ pve-qnap-api-probe --host <nas> --user admin --insecure
 
 ---
 
-## 三、QuTS hero h6.0 以上：不支援
+## 三、QuTS hero h6.0 以上：尚未支援
 
 對照表裡只有這一項是實際量測的結果，其他都是依文件判斷。這個 plugin 在一台 QuTS hero h6.0.1 的 NAS 上執行過：
 

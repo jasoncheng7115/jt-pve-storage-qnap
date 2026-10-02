@@ -3,7 +3,7 @@
 Read this before you put data on this storage.
 
 **So far this plugin has been tested on one QNAP NAS.** QuTS hero h6.0 and
-later are not supported. Every release in the 0.x series is a
+later are not supported yet. Every release in the 0.x series is a
 prerelease and this page is the honest account of where that stands. The related projects in this family
 (`jt-pve-storage-synology`, `-netapp`, `-purestorage`, `-dellemc`) reached
 stability by measuring an array and writing down what it actually did; this one
@@ -44,7 +44,7 @@ One run, with version 0.6.0, against a NAS on QuTS hero h6.0.1:
 | Creating the storage's iSCSI target, at `pvesm add` | **Refused by the NAS** |
 | Creating a LUN | **Refused by the NAS** |
 
-So QuTS hero h6.0 and later are not supported, and from 0.6.1 the plugin
+So QuTS hero h6.0 and later are not supported yet, and from 0.6.1 the plugin
 refuses them when the storage is added. See
 [SUPPORTED-QNAP-OS.md](SUPPORTED-QNAP-OS.md).
 
@@ -102,7 +102,7 @@ plugin supports.
    but only for calls that carry no secret. **The login is never sent as a
    GET**, so a firmware that only reads the query string cannot be used at all.
    This is the single most likely reason for a first run to fail. On QuTS hero
-   h6.0.1 the login was accepted as a POST. That firmware is not supported, so
+   h6.0.1 the login was accepted as a POST. That firmware is not supported yet, so
    the question is still open for the ones that are.
 
 8. **Concurrency.** `get_return` is keyed by CGI name rather than by job, so a

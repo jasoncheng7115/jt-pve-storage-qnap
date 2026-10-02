@@ -25,7 +25,7 @@
 | QTS 5.2 | **128** | 250 TB |
 | QuTS hero h6.0 | **256** | 1024 TB |
 
-QuTS hero 那一行是產品頁針對 h6.0 列出的數字。**這個 plugin 不支援 QuTS hero h6.0 以上**，見 [SUPPORTED-QNAP-OS_zh-TW.md](SUPPORTED-QNAP-OS_zh-TW.md)。使用手冊針對 QuTS hero h5.1.x 的數字在下面「使用手冊」那一段。
+QuTS hero 那一行是產品頁針對 h6.0 列出的數字。**QuTS hero h6.0 以上尚未支援**，見 [SUPPORTED-QNAP-OS_zh-TW.md](SUPPORTED-QNAP-OS_zh-TW.md)。使用手冊針對 QuTS hero h5.1.x 的數字在下面「使用手冊」那一段。
 
 查閱過的每個機型都是這兩個數字：
 
