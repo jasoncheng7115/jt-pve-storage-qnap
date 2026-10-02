@@ -21,10 +21,8 @@ Clone · Multipath. Registers the storage type **`qnapsan`**.
 
 **So far this plugin has been tested on one QNAP NAS.**
 
-That NAS ran QuTS hero h6.0.1, and the plugin does not work there:
 **QuTS hero h6.0 and later are not supported**, and the plugin refuses them when
-the storage is added. On the firmware it is written for (QTS 5.1 and QuTS hero
-h5.1) it has never been run.
+the storage is added.
 
 It is written from the API documentation alone. It compiles, it passes 247 unit
 tests, and it has been driven through its whole lifecycle against a simulated
