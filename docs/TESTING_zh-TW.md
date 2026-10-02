@@ -64,15 +64,17 @@
 
 12. **單一 target 能對應幾個 LUN？LUN 與 target 是否共用同一個上限**？預設的 `qnap-target-mode=shared` 會把這個 storage 的每顆磁碟都對應到同一個 target，所以那個 target 的上限就是這個 storage 的上限。NAS 會回報 LUN 總數與 target 總數的上限，但沒有「每個 target 幾個 LUN」的上限。Synology 的相關專案實測過單一 target 對應 200 個 LUN 沒有問題，但那不能代表 QTS。如果 QTS 的上限比較低，可以改用 `qnap-target-mode=per-volume`，代價是改受 target 總數的上限限制。QNAP 的使用手冊另外寫了 LUN 與 target **合計** 255，而 plugin 是分開檢查這兩個上限的，見 [LIMITS_zh-TW.md](LIMITS_zh-TW.md)。確認方式：對同一個 target 持續對應 LUN，直到 NAS 拒絕，記下當時的數量與 NAS 的回應。
 
+13. **在 QTS 上複製一顆磁碟要多久？能不能在 Proxmox VE 的時間上限內完成**？Proxmox VE 會在一把叢集鎖裡執行儲存端的複製，鎖內的動作超過 60 秒就會被中止。在 QuTS hero 上複製是即時的。在 QTS 上，NAS 會複製整顆磁碟，所以除了很小的磁碟之外，連結複製預期都會超過這個上限。這時工作會失敗，訊息是「locked command timed out」，NAS 則會繼續複製，完成之後的那顆磁碟不屬於任何 guest：它會出現在 `pvesm list`，需要用 `pvesm free` 移除。倒回也是在同一把鎖裡等待。這些都還沒有量測過，包含多大的磁碟還來得及。在量測之前，**在 QTS 上請使用完整複製**：`qm clone <vmid> <newid> --full 1`，或在網頁介面選擇「完整複製」。完整複製是由 Proxmox VE 自己複製資料，不受這個上限限制。這個 storage 無法從快照做完整複製。確認方式：在 QTS 上，把一顆已寫入 100 GB 的磁碟轉成範本，用 `--full 0` 複製，記下 NAS 花了多久，以及工作回報了什麼。
+
 ### 其他需要知道的事
 
-13. **QTS 的 LUN 名稱允許哪些字元？最長多少**？plugin 只送出英文字母、數字、`-`、`.` 與 `_`，長度上限 64，其餘在送出之前就會拒絕。已知 `_` 是合法的，其餘是保守的推測。
+14. **QTS 的 LUN 名稱允許哪些字元？最長多少**？plugin 只送出英文字母、數字、`-`、`.` 與 `_`，長度上限 64，其餘在送出之前就會拒絕。已知 `_` 是合法的，其餘是保守的推測。
 
-14. **QTS 的快照名稱允許哪些字元**？處理方式相同。
+15. **QTS 的快照名稱允許哪些字元**？處理方式相同。
 
-15. **快照清單裡的 `create_time` 是 epoch 嗎**？只有在數值像是合理的 epoch 時，plugin 才會回報時間戳記，否則不回報。Proxmox VE 9 沒有任何地方會讀取這個值。
+16. **快照清單裡的 `create_time` 是 epoch 嗎**？只有在數值像是合理的 epoch 時，plugin 才會回報時間戳記，否則不回報。Proxmox VE 9 沒有任何地方會讀取這個值。
 
-16. **`bTargetClusterEnable` 能不能讀回來**？`targetInfo` 不會回傳它，所以 plugin 在建立 target 時寫入，並在每次 `pvesm set` 時重新套用，不會在啟用磁碟的過程中寫入。如果有第二個節點無法登入某個 target，請執行 `pvesm set <storeid>` 重新套用。
+17. **`bTargetClusterEnable` 能不能讀回來**？`targetInfo` 不會回傳它，所以 plugin 在建立 target 時寫入，並在每次 `pvesm set` 時重新套用，不會在啟用磁碟的過程中寫入。如果有第二個節點無法登入某個 target，請執行 `pvesm set <storeid>` 重新套用。
 
 ---
 

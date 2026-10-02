@@ -262,7 +262,7 @@ function pickLang() {
                 </tr>
                 <tr>
                     <td><span class="lang-en">Template and linked clone</span><span class="lang-zh">範本與連結複製</span>
-                        <div class="cell-note"><span class="lang-en">Instant on QuTS hero. On QTS the same call copies, so a linked clone is as slow and as large as a full one.</span><span class="lang-zh">在 QuTS hero 上是即時的。在 QTS 上同一個呼叫是真的複製，所以連結複製跟完整複製一樣慢、一樣大。</span></div></td>
+                        <div class="cell-note"><span class="lang-en">Instant on QuTS hero. On QTS the same call copies, so a linked clone is as slow and as large as a full one, and Proxmox VE aborts it after 60 seconds. On QTS, make full clones.</span><span class="lang-zh">在 QuTS hero 上是即時的。在 QTS 上同一個呼叫是真的複製，所以連結複製跟完整複製一樣慢、一樣大，而且超過 60 秒會被 Proxmox VE 中止。在 QTS 上請使用完整複製。</span></div></td>
                     <td class="yes"><span class="status-badge status-badge--supported">yes</span></td>
                     <td class="yes"><span class="status-badge status-badge--supported">yes</span></td>
                 </tr>
@@ -349,7 +349,7 @@ is now 12884901888 bytes rather than the 11811160064 requested.</code></pre>
             </thead>
             <tbody>
                 <tr><td><span class="lang-en">Snapshot / rollback</span><span class="lang-zh">快照 / 倒回</span></td><td>✓</td><td>✓</td></tr>
-                <tr><td><span class="lang-en">Linked clone (<code>qm clone</code>)</span><span class="lang-zh">連結複製（<code>qm clone</code>）</span></td><td><span class="lang-en">works, but <strong>copies</strong></span><span class="lang-zh">可用，但是<strong>真的複製</strong></span></td><td><span class="lang-en"><strong>instant</strong></span><span class="lang-zh"><strong>即時</strong></span></td></tr>
+                <tr><td><span class="lang-en">Linked clone (<code>qm clone</code>)</span><span class="lang-zh">連結複製（<code>qm clone</code>）</span></td><td><span class="lang-en"><strong>copies</strong>, and is expected to fail on anything but a small disk</span><span class="lang-zh"><strong>真的複製</strong>，除了很小的磁碟之外預期會失敗</span></td><td><span class="lang-en"><strong>instant</strong></span><span class="lang-zh"><strong>即時</strong></span></td></tr>
                 <tr><td><span class="lang-en">Deploying from templates at scale</span><span class="lang-zh">大量從範本部署</span></td><td><span class="lang-en">slow</span><span class="lang-zh">慢</span></td><td><span class="lang-en">fast</span><span class="lang-zh">快</span></td></tr>
             </tbody>
         </table>

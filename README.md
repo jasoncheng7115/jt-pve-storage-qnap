@@ -44,7 +44,7 @@ a bug to fix:
 2. What does a QNAP LUN report as its SCSI vendor string?
 3. Does `authLogin.cgi` accept a POST? Every call this plugin makes is one.
 
-[docs/TESTING.md](docs/TESTING.md) lists all sixteen open items in the order
+[docs/TESTING.md](docs/TESTING.md) lists all seventeen open items in the order
 they should be settled, with the commands for a first run.
 
 Every 0.x release is a prerelease. This notice comes down when there is a
@@ -124,7 +124,10 @@ Every clone is made from a snapshot.
 * **QuTS hero (ZFS):** the clone shares the snapshot's blocks. A Proxmox VE
   linked clone is immediate and takes no extra space.
 * **QTS (LVM):** the clone is a copy. A linked clone of a 200 GB template writes
-  200 GB.
+  200 GB. Proxmox VE aborts a storage-side clone that runs longer than 60
+  seconds, so on QTS a linked clone of anything but a small disk is expected to
+  fail. **On QTS, make full clones** (`qm clone <vmid> <newid> --full 1`). See
+  item 13 in [docs/TESTING.md](docs/TESTING.md).
 
 The plugin detects which it is talking to and uses the right form. If you are
 choosing hardware and expect to deploy from templates, this is the deciding

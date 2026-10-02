@@ -143,20 +143,36 @@ plugin supports.
     [LIMITS.md](LIMITS.md). *How to check:* map LUNs to one target until the NAS
     refuses, and note the count and what it answered.
 
+13. **How long does a clone take on QTS, and does it finish inside Proxmox VE's
+    time limit?** Proxmox VE runs a storage-side clone under a cluster lock,
+    and it aborts whatever runs under that lock after 60 seconds. On QuTS hero
+    a clone is instant. On QTS the NAS copies the whole disk, so a linked clone
+    of anything but a small disk is expected to run past the limit. The task
+    then fails with a "locked command timed out" message, the NAS carries on
+    copying, and the disk it finishes belongs to no guest: it shows in
+    `pvesm list` and has to be removed with `pvesm free`. A rollback waits
+    under the same lock. None of this has been measured, including how large a
+    disk still fits. Until it has, **on QTS make full clones**:
+    `qm clone <vmid> <newid> --full 1`, or *Mode: Full Clone* in the web
+    interface. Proxmox VE copies those itself and they are not under the
+    limit. A full clone cannot be taken from a snapshot on this storage. To
+    check: on QTS, make a template of a disk with 100 GB written, clone it
+    with `--full 0`, and note how long the NAS takes and what the task reports.
+
 ### Worth knowing
 
-13. **What characters QTS accepts in a LUN name, and the maximum length.** The
+14. **What characters QTS accepts in a LUN name, and the maximum length.** The
     plugin sends letters, digits, `-`, `.` and `_`, capped at 64 characters,
     and refuses anything else before it reaches the NAS. `_` is known to be
     legal; the rest is a conservative guess.
 
-14. **What characters QTS accepts in a snapshot name.** Same treatment.
+15. **What characters QTS accepts in a snapshot name.** Same treatment.
 
-15. **Is `create_time` in a snapshot listing an epoch?** The plugin reports a
+16. **Is `create_time` in a snapshot listing an epoch?** The plugin reports a
     timestamp only when the value is plausible as one and reports none
     otherwise. Nothing in Proxmox VE 9 reads it.
 
-16. **Whether `bTargetClusterEnable` can be read back.** `targetInfo` does
+17. **Whether `bTargetClusterEnable` can be read back.** `targetInfo` does
     not return it, so the plugin writes it at target creation and again on every
     `pvesm set`, and never on the activation path. If a second node cannot log
     in to a target, run `pvesm set <storeid>` to re-apply it.

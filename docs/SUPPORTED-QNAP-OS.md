@@ -100,12 +100,20 @@ blocks, so a linked clone is immediate and takes no extra space.
 |---|---|---|
 | Snapshot | yes | yes |
 | Rollback | yes | yes |
-| Linked clone (`qm clone`) | works, but **copies** | instant |
+| Linked clone (`qm clone`) | **copies**, and is expected to fail on anything but a small disk | instant |
 | Full clone | copies | copies |
 | Template deployment at scale | slow | fast |
 
 If you are choosing hardware for a Proxmox VE cluster and expect to deploy from
 templates, this is the deciding factor.
+
+**On QTS, make full clones.** Proxmox VE runs a storage-side clone under a
+cluster lock and aborts it after 60 seconds, which a copy of a whole disk is
+expected to exceed. The task fails, the NAS carries on copying, and the disk it
+finishes belongs to no guest and has to be removed with `pvesm free`. A full
+clone (`qm clone <vmid> <newid> --full 1`) is copied by Proxmox VE itself and is
+not under that limit. This has not been measured: see item 13 in
+[TESTING.md](TESTING.md).
 
 One consequence to know about on QuTS hero: an instant clone keeps the snapshot
 it was made from as its backing store. The plugin therefore leaves a snapshot on

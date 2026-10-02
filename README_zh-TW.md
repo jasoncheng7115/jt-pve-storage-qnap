@@ -31,7 +31,7 @@ QTS · QuTS hero · 共用儲存 · 線上遷移 · 快照 / 倒回 · 複製 ·
 2. QNAP LUN 回報的 SCSI vendor 字串是什麼？
 3. `authLogin.cgi` 是否接受 POST？這個 plugin 的每一個呼叫都是 POST。
 
-[docs/TESTING_zh-TW.md](docs/TESTING_zh-TW.md) 依照應該處理的順序列出全部十六項待驗證事項，並附上第一次上機的指令。
+[docs/TESTING_zh-TW.md](docs/TESTING_zh-TW.md) 依照應該處理的順序列出全部十七項待驗證事項，並附上第一次上機的指令。
 
 0.x 全部都是預覽版本。有實測結果可以取代這段警語時，才會把它拿掉。
 
@@ -90,7 +90,7 @@ now 12884901888 bytes rather than the 11811160064 requested.
 所有複製都是從快照建立的。
 
 * **QuTS hero（ZFS）**：複製出來的磁碟與快照共用區塊。Proxmox VE 的連結複製會立即完成，而且不佔用額外空間。
-* **QTS（LVM）**：會實際複製資料。對 200 GB 的範本做連結複製，會寫入 200 GB。
+* **QTS（LVM）**：會實際複製資料。對 200 GB 的範本做連結複製，會寫入 200 GB。Proxmox VE 會中止超過 60 秒的儲存端複製，所以在 QTS 上，除了很小的磁碟之外，連結複製預期都會失敗。**在 QTS 上請使用完整複製**（`qm clone <vmid> <newid> --full 1`）。見 [docs/TESTING_zh-TW.md](docs/TESTING_zh-TW.md) 的第 13 項。
 
 plugin 會偵測連接的是哪一種，並使用對應的方式。如果正在選購硬體，而且預期會大量從範本部署，這一點是決定性的差異。
 
