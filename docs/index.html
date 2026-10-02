@@ -138,7 +138,7 @@ function pickLang() {
         <!-- The version sits on this line, immediately after the class, because
              <code>make release-check</code> reads it from here to prove the site has not
              drifted from the package. Do not reflow it. -->
-        <div class="hero__badge">v0.6.0 <span class="hero__badge-sep"></span> MIT <span class="hero__badge-sep"></span> <span class="lang-en">PRERELEASE</span><span class="lang-zh">預覽版</span></div>
+        <div class="hero__badge">v0.6.1 <span class="hero__badge-sep"></span> MIT <span class="hero__badge-sep"></span> <span class="lang-en">PRERELEASE</span><span class="lang-zh">預覽版</span></div>
         <h1 class="hero__title">jt-pve-storage-qnap</h1>
         <p class="hero__subtitle">
             <span class="lang-en">Proxmox VE uses a QNAP NAS over iSCSI directly as its VM storage back end.</span>
@@ -173,8 +173,8 @@ function pickLang() {
             <span class="lang-en">NOT YET TESTED ON HARDWARE</span><span class="lang-zh">尚未實機測試</span>
         </div>
         <div class="untested__body">
-            <span class="lang-en"><strong>No part of this plugin has ever run against a real QNAP NAS.</strong> It is written from the API documentation alone. It compiles, passes 207 unit tests and has been driven against a simulated NAS, and none of that proves it works on your NAS. <strong>Do not put production data on it.</strong> Run it against a spare NAS, or a pool you are willing to lose, and <a href="#status">read what is still unanswered</a> first.</span>
-            <span class="lang-zh"><strong>這個 plugin 還沒有在任何實體 QNAP NAS 上執行過。</strong>它完全是依照 API 文件寫成的。它可以編譯，通過 207 個單元測試，也對模擬的 NAS 跑過完整的操作流程，但這些都不能證明它在你的 NAS 上能正常運作。<strong>請不要放正式資料。</strong>請用一台備用 NAS、或一個可以捨棄的儲存集區來測試，並先<a href="#status">確認還有哪些項目尚未驗證</a>。</span>
+            <span class="lang-en"><strong>This plugin has not yet worked against a real QNAP NAS.</strong> It has been run against one, on QuTS hero h6.0.1, and it does not work there: QuTS hero h6.0 and later are not supported. On the firmware it is written for it has never been run. It is written from the API documentation alone. It compiles, passes 220 unit tests and has been driven against a simulated NAS, and none of that proves it works on your NAS. <strong>Do not put production data on it.</strong> Run it against a spare NAS, or a pool you are willing to lose, and <a href="#status">read what is still unanswered</a> first.</span>
+            <span class="lang-zh"><strong>這個 plugin 還沒有在任何實體 QNAP NAS 上正常運作過。</strong>它在實機上執行過一次，韌體是 QuTS hero h6.0.1，結果是無法使用：不支援 QuTS hero h6.0 以上。它所針對的韌體還沒有在實機上執行過。它完全是依照 API 文件寫成的。它可以編譯，通過 220 個單元測試，也對模擬的 NAS 跑過完整的操作流程，但這些都不能證明它在你的 NAS 上能正常運作。<strong>請不要放正式資料。</strong>請用一台備用 NAS、或一個可以捨棄的儲存集區來測試，並先<a href="#status">確認還有哪些項目尚未驗證</a>。</span>
         </div>
     </div>
 </div>
@@ -183,9 +183,9 @@ function pickLang() {
     <h2 class="section-title"><span class="lang-en">Read this first</span><span class="lang-zh">請先讀這個</span></h2>
 
     <div class="alert alert--danger">
-        <strong><span class="lang-en">This has not been run against a QNAP NAS yet.</span><span class="lang-zh">這個版本尚未在實體 QNAP NAS 上執行過。</span></strong><br>
-        <span class="lang-en">Every 0.x release is a prerelease. Nothing array-facing has been answered by a NAS yet, and every open item is listed in <a href="https://github.com/jasoncheng7115/jt-pve-storage-qnap/blob/main/docs/TESTING.md">TESTING.md</a> in the order it should be settled. Do not put data you care about on this yet.</span>
-        <span class="lang-zh">0.x 全部都是預覽版本。所有與 NAS 溝通的部分，都還沒有任何一台 NAS 回應過。所有待驗證項目都依處理順序列在 <a href="https://github.com/jasoncheng7115/jt-pve-storage-qnap/blob/main/docs/TESTING_zh-TW.md">TESTING_zh-TW.md</a>。請先不要把重要資料放上來。</span>
+        <strong><span class="lang-en">This has not worked against a QNAP NAS yet.</span><span class="lang-zh">這個版本尚未在實體 QNAP NAS 上正常運作過。</span></strong><br>
+        <span class="lang-en">Every 0.x release is a prerelease. The one real NAS it has met ran QuTS hero h6.0.1, which is not supported: it refused to create a target or a LUN. Nothing has been answered by a NAS on supported firmware yet, and every open item is listed in <a href="https://github.com/jasoncheng7115/jt-pve-storage-qnap/blob/main/docs/TESTING.md">TESTING.md</a> in the order it should be settled. Do not put data you care about on this yet.</span>
+        <span class="lang-zh">0.x 全部都是預覽版本。目前唯一遇過的實機是 QuTS hero h6.0.1，這個韌體不支援：NAS 拒絕建立 target 與 LUN。受支援的韌體還沒有任何一台 NAS 回應過。所有待驗證項目都依處理順序列在 <a href="https://github.com/jasoncheng7115/jt-pve-storage-qnap/blob/main/docs/TESTING_zh-TW.md">TESTING_zh-TW.md</a>。請先不要把重要資料放上來。</span>
     </div>
 
     <p>
@@ -439,6 +439,11 @@ is now 12884901888 bytes rather than the 11811160064 requested.</code></pre>
                     <td><span class="lang-en">Not verified</span><span class="lang-zh">未驗證</span></td>
                 </tr>
                 <tr>
+                    <td>QuTS hero</td><td><span class="lang-en">h6.0 and later</span><span class="lang-zh">h6.0 以上</span></td>
+                    <td><span class="status-badge status-badge--planned"><span class="lang-en">not supported</span><span class="lang-zh">不支援</span></span></td>
+                    <td><span class="lang-en">Measured on h6.0.1: the NAS refuses to create a target or a LUN. Refused at <code>pvesm add</code>. Do not upgrade a NAS in use to h6.</span><span class="lang-zh">已在 h6.0.1 上量測過：NAS 拒絕建立 target 與 LUN。<code>pvesm add</code> 會直接拒絕。使用中的 NAS 請不要升級到 h6。</span></td>
+                </tr>
+                <tr>
                     <td>QuTScloud</td><td><span class="lang-en">any</span><span class="lang-zh">任何版本</span></td>
                     <td><span class="status-badge status-badge--planned"><span class="lang-en">not supported</span><span class="lang-zh">不支援</span></span></td>
                     <td><span class="lang-en">A cloud image with no local storage pools of this shape</span><span class="lang-zh">雲端映像，沒有這種形式的本機儲存集區</span></td>
@@ -488,7 +493,7 @@ storage does not own, such as Virtual Machine Manager disks.</code></pre>
         <table>
             <tbody>
                 <tr><td>Proxmox VE</td><td><span class="lang-en">9.x, on <strong>every node</strong>. 8.x is expected to work and has never been tested</span><span class="lang-zh">9.x，<strong>叢集中的每個節點都要安裝</strong>。8.x 預期可以運作，但從未測試過</span></td></tr>
-                <tr><td><span class="lang-en">QNAP firmware</span><span class="lang-zh">QNAP 韌體</span></td><td><span class="lang-en">QTS 4.5.1+ or any QuTS hero, see above</span><span class="lang-zh">QTS 4.5.1 以上，或任何 QuTS hero，見上表</span></td></tr>
+                <tr><td><span class="lang-en">QNAP firmware</span><span class="lang-zh">QNAP 韌體</span></td><td><span class="lang-en">QTS 4.5.1+ or QuTS hero h5.x, see above. Not QuTS hero h6.0 or later</span><span class="lang-zh">QTS 4.5.1 以上，或 QuTS hero h5.x，見上表。不支援 QuTS hero h6.0 以上</span></td></tr>
                 <tr><td><span class="lang-en">On the NAS</span><span class="lang-zh">NAS 上</span></td><td><span class="lang-en">the iSCSI target service <strong>on</strong>, and a storage pool</span><span class="lang-zh">iSCSI target 服務必須<strong>啟用</strong>，並且要有儲存集區</span></td></tr>
                 <tr><td><span class="lang-en">Account</span><span class="lang-zh">帳號</span></td><td><span class="lang-en">an <strong>administrator</strong>, without 2-step verification</span><span class="lang-zh"><strong>管理員</strong>，且未啟用兩步驟驗證</span></td></tr>
                 <tr><td><span class="lang-en">On each node</span><span class="lang-zh">每個節點</span></td><td><code>open-iscsi</code>, <code>multipath-tools</code></td></tr>
@@ -663,8 +668,8 @@ pve-qnap-reap --all --remove    # act</code></pre>
     <h2 class="section-title"><span class="lang-en">How to help this project</span><span class="lang-zh">如何協助這個專案</span></h2>
 
     <p class="section-subtitle">
-        <span class="lang-en">What this project needs is not code. It is a QNAP NAS that somebody is willing to run it against, because none of it has met one.</span>
-        <span class="lang-zh">這個專案缺的不是程式，而是一台可以拿來測試的 QNAP NAS，因為它還沒有在任何一台上執行過。</span>
+        <span class="lang-en">What this project needs is not code. It is a QNAP NAS on QTS 5.x or QuTS hero h5.x that somebody is willing to run it against, because it has not met one.</span>
+        <span class="lang-zh">這個專案缺的不是程式，而是一台可以拿來測試、韌體是 QTS 5.x 或 QuTS hero h5.x 的 QNAP NAS，因為它還沒有在這樣的 NAS 上執行過。</span>
     </p>
 
     <ul>

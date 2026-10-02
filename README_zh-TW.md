@@ -14,9 +14,11 @@ QTS · QuTS hero · 共用儲存 · 線上遷移 · 快照 / 倒回 · 複製 ·
 
 ## ⚠️ 尚未實機測試
 
-**這個 plugin 還沒有在任何實體 QNAP NAS 上執行過。**
+**這個 plugin 還沒有在任何實體 QNAP NAS 上正常運作過。**
 
-它完全是依照 API 文件寫成的。它可以編譯，通過 207 個單元測試，也對模擬的 NAS 跑過完整的操作流程。**這些都不能證明它在你的 NAS 上能正常運作。**
+它在實機上執行過一次，韌體是 QuTS hero h6.0.1，結果是無法使用：**不支援 QuTS hero h6.0 以上**，新增 storage 時會直接拒絕。它所針對的韌體（QTS 5.1 與 QuTS hero h5.1）還沒有在實機上執行過。
+
+它完全是依照 API 文件寫成的。它可以編譯，通過 220 個單元測試，也對模擬的 NAS 跑過完整的操作流程。**這些都不能證明它在你的 NAS 上能正常運作。**
 
 | | |
 |---|---|
@@ -97,7 +99,7 @@ plugin 會偵測連接的是哪一種，並使用對應的方式。如果正在�
 | | |
 |---|---|
 | Proxmox VE | 9.x，**叢集中的每個節點都要安裝**。8.x 預期可以運作，但從未測試過 |
-| QNAP 韌體 | QTS 4.5.1 以上，或任何 QuTS hero。見 [docs/SUPPORTED-QNAP-OS_zh-TW.md](docs/SUPPORTED-QNAP-OS_zh-TW.md) |
+| QNAP 韌體 | QTS 4.5.1 以上，或 QuTS hero h5.x。**不支援 QuTS hero h6.0 以上**。見 [docs/SUPPORTED-QNAP-OS_zh-TW.md](docs/SUPPORTED-QNAP-OS_zh-TW.md) |
 | NAS 上 | iSCSI target 服務必須**啟用**，並且要有儲存集區 |
 | 帳號 | **管理員**，且未啟用兩步驟驗證。見 [docs/QNAP-ACCOUNT_zh-TW.md](docs/QNAP-ACCOUNT_zh-TW.md) |
 | 每個節點 | `open-iscsi`、`multipath-tools` |

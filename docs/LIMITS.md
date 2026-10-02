@@ -18,8 +18,8 @@ than capacity:
   a NAS that allows 128 holds roughly **64 such VMs**.
 
 Every figure on this page is quoted from a page QNAP publishes, with the URL.
-Nothing is interpolated, and **none of it has been measured by this project**: no
-part of this plugin has run against a NAS yet.
+Nothing is interpolated, and **none of it has been measured by this project**:
+this plugin has not yet worked against a NAS.
 
 ---
 
@@ -34,6 +34,11 @@ system:
 |---|---:|---:|
 | QTS 5.2 | **128** | 250 TB |
 | QuTS hero h6.0 | **256** | 1024 TB |
+
+The QuTS hero line is the one the product pages give for h6.0. **This plugin
+does not support QuTS hero h6.0 or later**, see
+[SUPPORTED-QNAP-OS.md](SUPPORTED-QNAP-OS.md). The user guide's figure for QuTS
+hero h5.1.x is under the user guides, below.
 
 The same two figures appear on every model that was looked up:
 

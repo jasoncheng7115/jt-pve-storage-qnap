@@ -1,3 +1,21 @@
+jt-pve-storage-qnap (0.6.1-1) unstable; urgency=medium
+
+  * Fixed: QuTS hero h6.0 and later are refused when the storage is added.
+    Measured on h6.0.1, the NAS refuses to create a target or a LUN for this
+    plugin while everything the plugin reads still answers. 0.6.0 reported
+    that as an unspecified error. It is now refused before anything is sent
+    that the NAS would refuse, with a message naming the firmware.
+    pve-qnap-api-probe says the same.
+  * Fixed: a NAS upgraded to h6 under an existing storage says so. Creating
+    or deleting a disk is refused by the NAS, and those refusals now name the
+    firmware as well as the code.
+  * Changed: the documents no longer say "any QuTS hero". h6.0 and later are
+    listed as not supported, with a warning against upgrading a NAS in use.
+  * Changed: a refused call now ends its message with a full stop.
+  * 13 unit tests added, 220 in total.
+
+ -- Jason Cheng (Jason Tools) <jason@jason.tools>  Fri, 02 Oct 2026 08:59:08 +0800
+
 jt-pve-storage-qnap (0.6.0-1) unstable; urgency=medium
 
   * Fixed: adding a storage with CHAP was refused. pvesm add with

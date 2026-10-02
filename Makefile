@@ -3,7 +3,7 @@ PACKAGE = jt-pve-storage-qnap
 # Versioning: the patch number increments per release and runs to .99 before
 # the minor number moves: 0.6.0, 0.6.1, ... 0.6.99, then 0.7.0. Keep this in
 # step with debian/changelog; release-check refuses when they disagree.
-VERSION = 0.6.0
+VERSION = 0.6.1
 
 DESTDIR =
 PREFIX   = /usr

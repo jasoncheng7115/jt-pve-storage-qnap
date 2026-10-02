@@ -2,7 +2,8 @@
 
 Short version: **QTS 5.1 and QuTS hero h5.1 are what it is written against.**
 Anything older than QTS 4.5.1 is refused when the storage is added, not
-discovered later.
+discovered later. **QuTS hero h6.0 and later are not supported**, and are
+refused the same way.
 
 This page is deliberately specific about the difference between *supported*,
 *expected to work* and *not supported*, because two of those are promises and
@@ -21,11 +22,15 @@ The firmware says which it has. `authLogin.cgi` returns:
 |---|---|---|---|
 | absent, or `0` | any | Legacy Storage Manager | **Refused** |
 | `1` | `0` | Storage Manager V2 on LVM (QTS) | Supported |
-| `1` | `1` | ZFS (QuTS hero) | Supported, and gets instant clones |
+| `1` | `1` | ZFS (QuTS hero) | Supported on h5.x, and gets instant clones. **Refused** on h6.0 and later |
 
 `pvesm add` calls this before it writes anything, so a firmware that is too old
 fails immediately with a message naming its version, rather than producing a
 storage that adds cleanly and then lists nothing.
+
+QuTS hero h6.0 and later report Storage Manager V2 as well, and this plugin
+still does not work on them. That one is decided from the firmware version, and
+is refused at the same moment. See section 3.
 
 To check before you install anything:
 
@@ -46,6 +51,7 @@ pve-qnap-api-probe --host <nas> --user admin --insecure
 | **QuTS hero** | **h5.1.x** | **Supported** | ZFS. Instant clones, so a Proxmox VE linked clone is instant |
 | QuTS hero | h5.2.x | Expected to work | Not verified |
 | QuTS hero | h4.5.x to h5.0.x | Expected to work | Not verified |
+| QuTS hero | h6.0 and later | **Not supported** | Measured on h6.0.1. Refused at `pvesm add`. See section 3 |
 | QuTScloud | any | **Not supported** | A cloud image with no local storage pools of this shape |
 | QNE Network OS | any | **Not supported** | A different product; it has no Storage Manager |
 | QTS on a TR-series expansion unit | any | n/a | An expansion unit is not a NAS |
@@ -56,7 +62,31 @@ combination.
 
 ---
 
-## 3. QTS or QuTS hero? It changes what a clone costs
+## 3. QuTS hero h6.0 and later: not supported
+
+This is the one entry in the matrix that was measured rather than read. The
+plugin was run against a NAS on QuTS hero h6.0.1:
+
+| | Result on h6.0.1 |
+|---|---|
+| Logging in, and reading the model, the firmware and the two discriminators | Works |
+| `pve-qnap-api-probe`: the portal, the storage pool, the LUNs, the targets | Works |
+| Creating the storage's iSCSI target | **Refused by the NAS** |
+| Creating a LUN | **Refused by the NAS** |
+
+So a storage on h6 could be described and could hold nothing. From 0.6.1 the
+plugin refuses QuTS hero h6.0 and later when the storage is added, before it
+sends anything the NAS would refuse, and the message names the firmware.
+
+**Do not upgrade a NAS that already holds this plugin's disks to QuTS hero
+h6.** After such an upgrade the storage still reports its capacity and still
+lists its disks, and no disk can be created or deleted. The plugin's refusals
+name the firmware when that happens. Whether guests that are already running
+keep their disks across the upgrade has not been measured.
+
+---
+
+## 4. QTS or QuTS hero? It changes what a clone costs
 
 Both are supported and the plugin works on either. The difference is one
 operation, and it is a big one.
@@ -84,7 +114,7 @@ a message that quotes what the NAS answered.
 
 ---
 
-## 4. Model requirements, which are not the same as firmware
+## 5. Model requirements, which are not the same as firmware
 
 A model can run a supported firmware and still not do what is needed.
 
@@ -105,7 +135,7 @@ A model can run a supported firmware and still not do what is needed.
 
 ---
 
-## 5. Proxmox VE
+## 6. Proxmox VE
 
 | | Version |
 |---|---|
@@ -120,7 +150,7 @@ The package must be installed **on every node of the cluster**.
 
 ---
 
-## 6. If your combination is not listed
+## 7. If your combination is not listed
 
 Run the probe and send its output. It prints the model, the firmware, both
 detection flags, the ceilings and the pools, and it creates nothing:

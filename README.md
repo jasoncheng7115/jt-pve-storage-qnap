@@ -19,9 +19,14 @@ Clone · Multipath. Registers the storage type **`qnapsan`**.
 
 ## ⚠️ NOT YET TESTED ON HARDWARE
 
-**No part of this plugin has ever run against a real QNAP NAS.**
+**This plugin has not yet worked against a real QNAP NAS.**
 
-It is written from the API documentation alone. It compiles, it passes 207 unit
+It has been run against one, on QuTS hero h6.0.1, and it does not work there:
+**QuTS hero h6.0 and later are not supported**, and the plugin refuses them when
+the storage is added. On the firmware it is written for (QTS 5.1 and QuTS hero
+h5.1) it has never been run.
+
+It is written from the API documentation alone. It compiles, it passes 220 unit
 tests, and it has been driven through its whole lifecycle against a simulated
 NAS. **None of that proves it works on your NAS.**
 
@@ -130,7 +135,7 @@ factor.
 | | |
 |---|---|
 | Proxmox VE | 9.x, on **every node**. 8.x is expected to work and has never been tested |
-| QNAP firmware | QTS 4.5.1+ or any QuTS hero. See [docs/SUPPORTED-QNAP-OS.md](docs/SUPPORTED-QNAP-OS.md) |
+| QNAP firmware | QTS 4.5.1+ or QuTS hero h5.x. **Not QuTS hero h6.0 or later.** See [docs/SUPPORTED-QNAP-OS.md](docs/SUPPORTED-QNAP-OS.md) |
 | On the NAS | the iSCSI target service **on**, and a storage pool |
 | Account | an **administrator**, without 2-step verification. See [docs/QNAP-ACCOUNT.md](docs/QNAP-ACCOUNT.md) |
 | On each node | `open-iscsi`, `multipath-tools` |

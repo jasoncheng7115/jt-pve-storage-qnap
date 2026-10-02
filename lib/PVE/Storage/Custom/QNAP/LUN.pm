@@ -526,7 +526,8 @@ sub delete {
         if defined $result && $result =~ /\A\d+\z/ && $result == 0;
 
     die "storage '" . $self->_storeid . "': could not delete LUN $index: "
-      . PVE::Storage::Custom::QNAP::API::error_text($result) . "\n";
+      . PVE::Storage::Custom::QNAP::API::error_text($result) . "."
+      . $self->api->firmware_note . "\n";
 }
 
 # ---------------------------------------------------------------------------

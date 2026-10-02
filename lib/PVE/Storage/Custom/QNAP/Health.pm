@@ -243,8 +243,18 @@ sub assert_usable {
     # empty.
     die "storage '$storeid': $model is running firmware $fw, which reports the"
       . " LEGACY Storage Manager rather than Storage Manager V2. This plugin"
-      . " implements the V2 API only. QTS 4.5.1 or later, or any QuTS hero,"
+      . " implements the V2 API only. QTS 4.5.1 or later, or QuTS hero h5.x,"
       . " provides V2.\n" if !$api->is_storage_v2;
+
+    # QuTS hero h6.0 and later. Refused for the same reason and at the same
+    # moment: measured on h6.0.1, the storage could be described but neither a
+    # target nor a LUN could be created, so adding it would leave a storage that
+    # reports its capacity and can hold nothing.
+    my $unsupported = $api->unsupported_firmware;
+    die "storage '$storeid': $model is running $unsupported. This plugin does"
+      . " not work on QuTS hero h6.0 or later: measured on h6.0.1, the NAS"
+      . " refuses the calls this plugin uses to create targets and LUNs. Use"
+      . " QuTS hero h5.x or QTS.\n" if defined $unsupported;
 
     # The iSCSI service being off is the single most likely reason a correctly
     # configured storage does nothing at all, and QTS ships it off.

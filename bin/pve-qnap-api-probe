@@ -33,7 +33,7 @@ use PVE::Storage::Custom::QNAP::ISCSI;
 # missing subroutine rather than about a missing tool.
 use PVE::Storage::Custom::QNAP::Command;
 
-my $VERSION = '0.6.0';
+my $VERSION = '0.6.1';
 
 my %opt = (port => 443, scheme => 'https');
 my $show_version;
@@ -168,6 +168,12 @@ if ($api->is_zfs) {
 } else {
     info "QTS (is_zfs=" . ($info->{is_zfs} // '0') . "): clones COPY."
        . " A linked clone is as slow and as large as a full one.";
+}
+
+if (defined(my $unsupported = $api->unsupported_firmware)) {
+    bad "$unsupported: this plugin does NOT work on QuTS hero h6.0 or later."
+      . " Measured on h6.0.1, the NAS refuses the calls it uses to create"
+      . " targets and LUNs. Everything below can still be read.";
 }
 
 head "iSCSI portal";

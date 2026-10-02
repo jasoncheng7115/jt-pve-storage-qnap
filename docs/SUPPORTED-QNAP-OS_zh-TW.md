@@ -1,6 +1,6 @@
 # 這個 plugin 支援的 QNAP 作業系統
 
-簡要來說，**它是針對 QTS 5.1 與 QuTS hero h5.1 撰寫的**。比 QTS 4.5.1 更舊的版本，會在新增 storage 時直接被拒絕，不會等到之後才發現。
+簡要來說，**它是針對 QTS 5.1 與 QuTS hero h5.1 撰寫的**。比 QTS 4.5.1 更舊的版本，會在新增 storage 時直接被拒絕，不會等到之後才發現。**QuTS hero h6.0 以上不支援**，同樣會在新增時被拒絕。
 
 這一頁把「支援」、「應可運作」與「不支援」分開說明，因為前後兩個是確定的答案，中間那個不是。
 
@@ -16,9 +16,11 @@ QNAP 有兩代 Storage Manager，兩者是**兩套不同的 CGI 呼叫**，不�
 |---|---|---|---|
 | 不存在，或 `0` | 任何值 | 舊版 Storage Manager | **拒絕** |
 | `1` | `0` | LVM 上的 Storage Manager V2（QTS）| 支援 |
-| `1` | `1` | ZFS（QuTS hero）| 支援，並且可以使用即時複製 |
+| `1` | `1` | ZFS（QuTS hero）| h5.x 支援，並且可以使用即時複製。h6.0 以上**拒絕** |
 
 `pvesm add` 在寫入任何東西之前就會做這項檢查。太舊的韌體會立刻失敗，訊息裡會寫出版本，不會先新增成功，之後才列不出任何東西。
+
+QuTS hero h6.0 以上同樣回報 Storage Manager V2，但這個 plugin 仍然無法在上面運作。這一項是依韌體版本判斷的，也在同一個時間點拒絕。見第三節。
 
 安裝之前可以先確認：
 
@@ -39,6 +41,7 @@ pve-qnap-api-probe --host <nas> --user admin --insecure
 | **QuTS hero** | **h5.1.x** | **支援** | ZFS。可以使用即時複製，所以 Proxmox VE 的連結複製會立即完成 |
 | QuTS hero | h5.2.x | 應可運作 | 尚未驗證 |
 | QuTS hero | h4.5.x 至 h5.0.x | 應可運作 | 尚未驗證 |
+| QuTS hero | h6.0 以上 | **不支援** | 已在 h6.0.1 上量測過。`pvesm add` 會直接拒絕。見第三節 |
 | QuTScloud | 任何版本 | **不支援** | 雲端映像檔，沒有這種形式的本機儲存集區 |
 | QNE Network OS | 任何版本 | **不支援** | 不同的產品，沒有 Storage Manager |
 | TR 系列擴充櫃上的 QTS | 任何版本 | 不適用 | 擴充櫃不是 NAS |
@@ -47,7 +50,24 @@ pve-qnap-api-probe --host <nas> --user admin --insecure
 
 ---
 
-## 三、QTS 與 QuTS hero 的差別：複製的代價
+## 三、QuTS hero h6.0 以上：不支援
+
+對照表裡只有這一項是實際量測的結果，其他都是依文件判斷。這個 plugin 在一台 QuTS hero h6.0.1 的 NAS 上執行過：
+
+| | 在 h6.0.1 上的結果 |
+|---|---|
+| 登入，並讀取機型、韌體版本與兩個判別欄位 | 正常 |
+| `pve-qnap-api-probe`：portal、儲存集區、LUN、target | 正常 |
+| 建立 storage 的 iSCSI target | **被 NAS 拒絕** |
+| 建立 LUN | **被 NAS 拒絕** |
+
+所以在 h6 上，storage 的資訊讀得出來，但放不了任何磁碟。從 0.6.1 開始，新增 storage 時 plugin 會直接拒絕 QuTS hero h6.0 以上的韌體，不會先送出 NAS 會拒絕的呼叫，訊息裡會寫出韌體版本。
+
+**已經放有這個 plugin 磁碟的 NAS，請不要升級到 QuTS hero h6**。升級之後，storage 仍然會回報容量、列出磁碟，但無法建立或刪除任何磁碟。這時 plugin 的錯誤訊息會寫出韌體版本。升級過程中，執行中的 guest 是否還能繼續使用原本的磁碟，尚未量測。
+
+---
+
+## 四、QTS 與 QuTS hero 的差別：複製的代價
 
 兩者都支援，plugin 在任何一種上都能運作。差別只在一個操作，但影響很大。
 
@@ -67,7 +87,7 @@ pve-qnap-api-probe --host <nas> --user admin --insecure
 
 ---
 
-## 四、機型需求與韌體版本是兩回事
+## 五、機型需求與韌體版本是兩回事
 
 機型可以執行支援的韌體，卻仍然不符合需求。
 
@@ -78,7 +98,7 @@ pve-qnap-api-probe --host <nas> --user admin --insecure
 
 ---
 
-## 五、Proxmox VE
+## 六、Proxmox VE
 
 | | 版本 |
 |---|---|
@@ -91,7 +111,7 @@ API 版本是協商出來的，不是固定寫在程式裡。如果宣稱的版�
 
 ---
 
-## 六、組合不在表上時
+## 七、組合不在表上時
 
 請執行探索工具，並把輸出提供給我們。它會印出機型、韌體、兩個判別欄位、數量上限與儲存集區，而且不會建立任何東西：
 

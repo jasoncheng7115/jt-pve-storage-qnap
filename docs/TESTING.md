@@ -2,9 +2,10 @@
 
 Read this before you put data on this storage.
 
-**Nothing in this plugin has been exercised against a QNAP NAS yet.** Every
-release in the 0.x series is a prerelease and this page is the honest account of
-where that stands. The related projects in this family
+**This plugin has not yet worked against a QNAP NAS.** It has been run against
+one, on QuTS hero h6.0.1, where it does not work. On the firmware it is written
+for, nothing has been exercised yet. Every release in the 0.x series is a
+prerelease and this page is the honest account of where that stands. The related projects in this family
 (`jt-pve-storage-synology`, `-netapp`, `-purestorage`, `-dellemc`) reached
 stability by measuring an array and writing down what it actually did; this one
 is at the start of that process.
@@ -13,7 +14,8 @@ is at the start of that process.
 
 Everything that talks to the NAS (authentication, iSCSI targets and LUNs,
 storage pools, and LUN snapshots) is written from the API documentation for QTS
-5.1 and from nothing else. No NAS has answered any of it yet.
+5.1 and from nothing else. No NAS on supported firmware has answered any of it
+yet.
 
 Where the behaviour is known, the plugin follows it. Where it is not, the code
 is deliberately strict: it refuses rather than assumes, so a wrong guess
@@ -28,6 +30,28 @@ The parts ported from the related projects (the multipath handling, the iSCSI
 node management, the bounded command runner, the WWID tracking) **have** been
 measured, on other storage. What they protect against is the node's and the
 kernel's behaviour, which does not change with the storage vendor.
+
+---
+
+## What a real NAS has answered
+
+One run, with version 0.6.0, against a NAS on QuTS hero h6.0.1:
+
+| | Result |
+|---|---|
+| The login, sent as a POST | Accepted |
+| `storage_v2` and `is_zfs` | Both reported as `1` |
+| `pve-qnap-api-probe` | Read the portal, the storage pool, the LUNs and the targets |
+| Creating the storage's iSCSI target, at `pvesm add` | **Refused by the NAS** |
+| Creating a LUN | **Refused by the NAS** |
+
+So QuTS hero h6.0 and later are not supported, and from 0.6.1 the plugin
+refuses them when the storage is added. See
+[SUPPORTED-QNAP-OS.md](SUPPORTED-QNAP-OS.md).
+
+That run settled none of the items below. No LUN was created, so no device, no
+WWID and no vendor string was seen, and the firmware it ran on is not one this
+plugin supports.
 
 ---
 
@@ -78,7 +102,9 @@ kernel's behaviour, which does not change with the storage vendor.
    a firmware that did not read the POST body and repeats that call as a GET,
    but only for calls that carry no secret. **The login is never sent as a
    GET**, so a firmware that only reads the query string cannot be used at all.
-   This is the single most likely reason for a first run to fail.
+   This is the single most likely reason for a first run to fail. On QuTS hero
+   h6.0.1 the login was accepted as a POST. That firmware is not supported, so
+   the question is still open for the ones that are.
 
 8. **Concurrency.** `get_return` is keyed by CGI name rather than by job, so a
    clone and a rollback in flight at once cannot be told apart. The plugin

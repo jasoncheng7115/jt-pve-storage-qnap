@@ -1,8 +1,24 @@
 # 變更記錄
 
-0.x 全部都是預覽版本。**這個 plugin 還沒有在任何 QNAP NAS 上執行過**。
+0.x 全部都是預覽版本。**這個 plugin 還沒有在任何 QNAP NAS 上正常運作過**。
 
 哪些項目已經在實機上驗證、哪些還沒有，記錄在 [docs/TESTING_zh-TW.md](docs/TESTING_zh-TW.md)。要判斷某一版能不能採用，那份文件比這一份有用。
+
+## [0.6.1] - 2026-10-02
+
+第一份實機回報。那台 NAS 的韌體是 QuTS hero h6.0.1，這個 plugin 在上面無法使用。
+
+### 修正
+
+- **新增 storage 時會直接拒絕 QuTS hero h6.0 以上**。在 h6.0.1 上，NAS 拒絕為這個 plugin 建立 target 與 LUN，但 plugin 讀取的部分都還有回應。0.6.0 在 `pvesm add` 時只回報「-1 (the NAS reported an unspecified error)」。現在會在送出 NAS 會拒絕的呼叫之前就拒絕，訊息裡會寫出韌體版本。`pve-qnap-api-probe` 也會顯示同樣的結論。
+- **NAS 在 storage 已經存在的情況下升級到 h6 時，錯誤訊息會說明原因**。storage 仍然會回報容量、列出磁碟，但建立或刪除磁碟都會被 NAS 拒絕。這些錯誤訊息現在除了代碼之外，也會寫出韌體版本。
+
+### 變更
+
+- **文件不再寫「任何 QuTS hero」**。這個 plugin 針對的是 QuTS hero h5.x。[docs/SUPPORTED-QNAP-OS_zh-TW.md](docs/SUPPORTED-QNAP-OS_zh-TW.md) 把 h6.0 以上列為不支援，並提醒使用中的 NAS 不要升級。h6.0.1 那次執行回答了什麼、沒有回答什麼，記錄在 [docs/TESTING_zh-TW.md](docs/TESTING_zh-TW.md)。
+- 被拒絕的呼叫，訊息結尾現在有句點。有依訊息文字做比對的程式需要一併調整。
+- 中文文件的 storage pool 一律寫成「儲存集區」。
+- 針對上述修正新增 13 個單元測試，合計 220 個。
 
 ## [0.6.0] - 2026-10-01
 

@@ -719,7 +719,8 @@ sub call_ok {
       . " <result>, so whether it happened is unknown. Check the NAS before"
       . " retrying.\n" if !defined $result;
 
-    die "storage '$self->{storeid}': $what failed: " . error_text($result) . "\n"
+    die "storage '$self->{storeid}': $what failed: " . error_text($result) . "."
+      . $self->firmware_note . "\n"
         if $result !~ /\A-?\d+\z/ || $result != 0;
 
     return $r;
@@ -740,7 +741,8 @@ sub call_id {
       . " <result>, so whether it happened is unknown. Check the NAS before"
       . " retrying.\n" if !defined $result || $result !~ /\A-?\d+\z/;
 
-    die "storage '$self->{storeid}': $what failed: " . error_text($result) . "\n"
+    die "storage '$self->{storeid}': $what failed: " . error_text($result) . "."
+      . $self->firmware_note . "\n"
         if $result < 0;
 
     return $result + 0;
@@ -859,6 +861,44 @@ sub is_storage_v2 {
     my ($self) = @_;
     my $i = $self->sysinfo;
     return (($i->{storage_v2} // '') eq '1') ? 1 : 0;
+}
+
+# Firmware this plugin is KNOWN not to work on, as a string naming it, or undef.
+#
+# Measured, not inferred: on QuTS hero h6.0.1 the NAS refuses the calls this
+# plugin uses to create a target and to create a LUN, while the listings still
+# answer. So a storage on such a NAS looks healthy and can do nothing, and the
+# refusals it gets carry a number and no reason. This is what turns that into a
+# sentence.
+#
+# The version arrives as `h6.0.1` or as `6.0.1`; both are read. Only QuTS hero
+# is judged: nothing has been measured on a QTS with the same major number, and
+# refusing on a guess would lock out firmware that works. A version that cannot
+# be read is not refused either.
+use constant UNSUPPORTED_HERO_MAJOR => 6;
+
+sub unsupported_firmware {
+    my ($self) = @_;
+    return undef if !$self->is_zfs;
+
+    my $fw = $self->sysinfo->{firmware};
+    return undef if !defined $fw || $fw !~ /\Ah?(\d+)\./i;
+    return undef if $1 < UNSUPPORTED_HERO_MAJOR;
+
+    (my $shown = $fw) =~ s/\Ah?/h/i;
+    return "QuTS hero $shown";
+}
+
+# What to add to the report of a call the NAS refused, when the firmware is one
+# this plugin does not work on. A NAS that was upgraded under a storage that
+# already exists is the case this is for: nothing checks the firmware again
+# until something fails, and then the failure should say why.
+sub firmware_note {
+    my ($self) = @_;
+    my $fw = eval { $self->unsupported_firmware };
+    return '' if !defined $fw;
+    return " This NAS runs $fw, and this plugin does not work on QuTS hero"
+         . " h6.0 or later.";
 }
 
 # The iSCSI portal's own description, which carries THIS NAS's ceilings.

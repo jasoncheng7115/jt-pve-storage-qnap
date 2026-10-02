@@ -6,7 +6,7 @@
 
 use strict;
 use warnings;
-use Test::More tests => 41;
+use Test::More tests => 54;
 
 use PVE::Storage::Custom::QNAP::API;
 my $A = 'PVE::Storage::Custom::QNAP::API';
@@ -231,3 +231,56 @@ eval { PVE::Storage::Custom::QNAP::API->new(portals => '', storeid => 't') };
 like($@, qr/no management address/, 'a storage with no address is refused');
 is($api->scheme, 'https',
    'https is the default, because http puts the password on the wire in clear');
+
+# ---------------------------------------------------------------------------
+# Firmware this plugin is known not to work on
+# ---------------------------------------------------------------------------
+#
+# Measured on QuTS hero h6.0.1: the listings answer, and the calls that create
+# a target and a LUN are refused. The version is read in both spellings, only
+# QuTS hero is judged, and a version that cannot be read is not refused.
+{
+    my $fw = sub {
+        my ($version, $zfs) = @_;
+        my $api = bless {
+            storeid => 't',
+            sysinfo => { firmware => $version, is_zfs => $zfs, storage_v2 => '1' },
+        }, $A;
+        return $api;
+    };
+
+    is($fw->('h6.0.1', '1')->unsupported_firmware, 'QuTS hero h6.0.1',
+       'QuTS hero h6.0.1 is named as unsupported');
+    is($fw->('6.0.1', '1')->unsupported_firmware, 'QuTS hero h6.0.1',
+       'and so is the same version reported without its h');
+    is($fw->('h6.1.0', '1')->unsupported_firmware, 'QuTS hero h6.1.0',
+       'a later 6.x is refused too');
+    is($fw->('h10.0.0', '1')->unsupported_firmware, 'QuTS hero h10.0.0',
+       'the major number is compared as a number, not as a string');
+    is($fw->('h5.2.4', '1')->unsupported_firmware, undef,
+       'QuTS hero h5.x is not refused');
+    is($fw->('5.1.0', '1')->unsupported_firmware, undef,
+       'nor is h5.x reported without its h');
+    is($fw->('6.0.1', '0')->unsupported_firmware, undef,
+       'a QTS with the same major number is NOT refused: nothing was measured on one');
+    is($fw->(undef, '1')->unsupported_firmware, undef,
+       'a NAS that did not report its version is not refused on a guess');
+    is($fw->('beta', '1')->unsupported_firmware, undef,
+       'nor is a version that is not a number');
+
+    is($fw->('h5.1.0', '1')->firmware_note, '',
+       'a refused call on supported firmware gets no firmware note');
+    like($fw->('h6.0.1', '1')->firmware_note, qr/\A This NAS runs QuTS hero h6\.0\.1,/,
+         'a refused call on h6 says which firmware the NAS runs');
+
+    # The two forms every write goes through carry the note, so a NAS upgraded
+    # under an existing storage explains its own refusals.
+    no warnings 'redefine';
+    local *PVE::Storage::Custom::QNAP::API::call = sub { return { result => '-1' } };
+    my $e = do { eval { $fw->('h6.0.1', '1')->call_id('x.cgi', _what => 'creating a LUN') }; $@ };
+    like($e, qr/creating a LUN failed: -1 \(.+\)\. This NAS runs QuTS hero h6\.0\.1/,
+         'call_id reports the firmware with the refusal');
+    $e = do { eval { $fw->('h5.1.0', '1')->call_ok('x.cgi', _what => 'creating a LUN') }; $@ };
+    like($e, qr/creating a LUN failed: -1 \([^)]+\)\.\n\z/,
+         'and on supported firmware the message is the refusal alone');
+}

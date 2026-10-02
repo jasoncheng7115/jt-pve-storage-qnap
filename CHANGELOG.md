@@ -1,11 +1,41 @@
 # Changelog
 
-Every 0.x release is a prerelease. **Nothing in this plugin has run against a
-QNAP NAS yet.**
+Every 0.x release is a prerelease. **This plugin has not yet worked against a
+QNAP NAS.**
 
 The register of what has been verified against real hardware, and what has not,
 is [docs/TESTING.md](docs/TESTING.md). It is more useful than this file for
 deciding whether to trust a given release.
+
+## [0.6.1] - 2026-10-02
+
+The first report from a real NAS. It ran QuTS hero h6.0.1, and the plugin does
+not work there.
+
+### Fixed
+
+- **QuTS hero h6.0 and later are refused when the storage is added.** On
+  h6.0.1 the NAS refuses to create a target or a LUN for this plugin, while
+  everything the plugin reads still answers. 0.6.0 reported that from
+  `pvesm add` as "-1 (the NAS reported an unspecified error)". It is now refused
+  before anything is sent that the NAS would refuse, with a message naming the
+  firmware. `pve-qnap-api-probe` says the same.
+- **A NAS upgraded to h6 under an existing storage says so.** The storage keeps
+  reporting its capacity and listing its disks, and creating or deleting a disk
+  is refused by the NAS. Those refusals now name the firmware as well as the
+  code.
+
+### Changed
+
+- **The documents no longer say "any QuTS hero".** QuTS hero h5.x is what the
+  plugin is written for. h6.0 and later are listed as not supported in
+  [docs/SUPPORTED-QNAP-OS.md](docs/SUPPORTED-QNAP-OS.md), with a warning against
+  upgrading a NAS that is in use. What the run on h6.0.1 answered, and what it
+  did not, is in [docs/TESTING.md](docs/TESTING.md).
+- A refused call now ends its message with a full stop. Anything that matches on
+  message text needs the same change.
+- The Chinese documents call a storage pool 儲存集區 throughout.
+- 13 unit tests added for the above, 220 in total.
 
 ## [0.6.0] - 2026-10-01
 
