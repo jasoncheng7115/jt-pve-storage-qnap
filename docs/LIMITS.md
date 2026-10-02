@@ -169,8 +169,8 @@ Three things about those numbers:
 - **The budget is shared.** A snapshot schedule you set up on the NAS yourself
   draws on the same per-LUN and per-NAS figures as the snapshots Proxmox VE takes.
 - **The plugin does not know these ceilings in advance.** It takes the snapshot
-  and reports what the NAS answers. A template also keeps one snapshot of its own
-  for its linked clones to hang off.
+  and reports what the NAS answers. On QuTS hero a template also keeps one
+  snapshot of its own for its linked clones to hang off.
 
 ### A snapshot with RAM takes a LUN of its own
 

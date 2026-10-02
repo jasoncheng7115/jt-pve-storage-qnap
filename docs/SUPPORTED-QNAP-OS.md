@@ -86,34 +86,36 @@ keep their disks across the upgrade has not been measured.
 
 ---
 
-## 4. QTS or QuTS hero? It changes what a clone costs
+## 4. QTS or QuTS hero? Linked clones exist on QuTS hero only
 
-Both are supported and the plugin works on either. The difference is one
-operation, and it is a big one.
+Both are supported. The difference is one operation, and it is a big one.
 
-Every clone this plugin makes is made from a snapshot. On **QTS** that clone is
-a copy: a linked clone of a 200 GB template writes 200 GB and takes as long as a
-full clone. On **QuTS hero** it is an *instant* clone that shares the snapshot's
-blocks, so a linked clone is immediate and takes no extra space.
+Every clone this plugin makes is made on the NAS, from a snapshot. On **QuTS
+hero** that is an *instant* clone that shares the snapshot's blocks, so a linked
+clone is immediate and takes no extra space. On **QTS** a clone copies the whole
+disk, and Proxmox VE aborts a storage-side clone that runs longer than 60
+seconds. So on QTS the plugin does not offer one: Proxmox VE refuses a linked
+clone, or a clone from a snapshot, before it starts.
 
 | | QTS (LVM) | QuTS hero (ZFS) |
 |---|---|---|
 | Snapshot | yes | yes |
-| Rollback | yes | yes |
-| Linked clone (`qm clone`) | **copies**, and is expected to fail on anything but a small disk | instant |
-| Full clone | copies | copies |
+| Rollback | yes. Takes as long as the NAS needs to write the disk back | yes |
+| Linked clone, clone from a snapshot | **not offered** | instant |
+| Template | yes, cloned with a full clone | yes |
+| Full clone | copied by Proxmox VE | copied by Proxmox VE |
 | Template deployment at scale | slow | fast |
 
 If you are choosing hardware for a Proxmox VE cluster and expect to deploy from
 templates, this is the deciding factor.
 
-**On QTS, make full clones.** Proxmox VE runs a storage-side clone under a
-cluster lock and aborts it after 60 seconds, which a copy of a whole disk is
-expected to exceed. The task fails, the NAS carries on copying, and the disk it
-finishes belongs to no guest and has to be removed with `pvesm free`. A full
-clone (`qm clone <vmid> <newid> --full 1`) is copied by Proxmox VE itself and is
-not under that limit. This has not been measured: see item 13 in
-[TESTING.md](TESTING.md).
+**On QTS, clone a template with a full clone**: `qm clone <vmid> <newid>
+--full 1`, or *Mode: Full Clone* in the web interface. Proxmox VE copies the
+data itself and is under no such limit.
+
+The plugin runs one rollback or clone on a NAS at a time. A second one started
+meanwhile, from any node, is refused with a message that says what is running,
+on which node and since when.
 
 One consequence to know about on QuTS hero: an instant clone keeps the snapshot
 it was made from as its backing store. The plugin therefore leaves a snapshot on

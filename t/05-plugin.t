@@ -7,13 +7,14 @@
 use strict;
 use warnings;
 use Test::More;
+use File::Temp;
 
 BEGIN {
     eval { require PVE::Storage::Plugin; 1 }
         or plan skip_all => 'Proxmox VE is not installed on this machine';
 }
 
-plan tests => 40;
+plan tests => 67;
 
 use PVE::Storage;
 use PVE::Storage::Custom::QNAPSANPlugin;
@@ -74,10 +75,61 @@ ok($P->volume_has_feature($scfg, 'snapshot', 's', 'base-1-disk-0/vm-2-disk-0'),
 ok($P->volume_has_feature($scfg, 'rename', 's', 'base-1-disk-0/vm-2-disk-0'),
    'a linked clone can be renamed too');
 
-ok($P->volume_has_feature($scfg, 'clone', 's', 'base-100-disk-0'),
-   'a template can be cloned');
-ok($P->volume_has_feature($scfg, 'clone', 's', 'vm-100-disk-0', 'snap1'),
-   'and so can a snapshot');
+# A CLONE IS OFFERED ON QuTS HERO ONLY, and only where that is KNOWN.
+#
+# On QTS the call copies the whole disk and PVE aborts it after 60 seconds. The
+# kind of NAS is kept on file per node; with nothing on file and no NAS to ask,
+# the answer is "not offered", never a guess.
+{
+    my $dir = File::Temp::tempdir(CLEANUP => 1);
+    local $PVE::Storage::Custom::QNAPSANPlugin::STATE_DIR = $dir;
+    # No NAS behind these tests: asking one fails, as it would for a NAS that
+    # is down.
+    no warnings 'redefine';
+    local *PVE::Storage::Custom::QNAPSANPlugin::_api = sub { die "no NAS\n" };
+    my $kind = sub {
+        open(my $fh, '>', "$dir/s.nas") or die $!; print $fh "$_[0]\n"; close($fh);
+    };
+
+    is($P->_nas_is_zfs('s', $scfg), undef,
+       'with nothing on file and no NAS to ask, the kind is unknown');
+    ok(!$P->volume_has_feature($scfg, 'clone', 's', 'base-100-disk-0'),
+       'and a clone is NOT offered on an unknown NAS');
+
+    $kind->('zfs');
+    is($P->_nas_is_zfs('s', $scfg), 1, 'QuTS hero on file is read as QuTS hero');
+    ok($P->volume_has_feature($scfg, 'clone', 's', 'base-100-disk-0'),
+       'QuTS hero: a template can be cloned');
+    ok($P->volume_has_feature($scfg, 'clone', 's', 'vm-100-disk-0', 'snap1'),
+       'QuTS hero: and so can a snapshot');
+    ok($P->volume_has_feature($scfg, 'clone', 's', 'vm-100-disk-0'),
+       'QuTS hero: and the current state');
+
+    $kind->('lvm');
+    is($P->_nas_is_zfs('s', $scfg), 0, 'QTS on file is read as QTS');
+    ok(!$P->volume_has_feature($scfg, 'clone', 's', 'base-100-disk-0'),
+       'QTS: a template is NOT offered as a linked clone');
+    ok(!$P->volume_has_feature($scfg, 'clone', 's', 'vm-100-disk-0', 'snap1'),
+       'QTS: nor is a clone from a snapshot');
+    ok(!$P->volume_has_feature($scfg, 'clone', 's', 'vm-100-disk-0'),
+       'QTS: nor of the current state');
+    ok($P->volume_has_feature($scfg, 'snapshot', 's', 'vm-100-disk-0'),
+       'QTS: snapshots are still offered');
+    ok($P->volume_has_feature($scfg, 'copy', 's', 'base-100-disk-0'),
+       'QTS: and a template can still be FULLY cloned, which PVE does itself');
+    ok($P->volume_has_feature($scfg, 'template', 's', 'vm-100-disk-0'),
+       'QTS: a disk can still become a template');
+
+    # Stale, and the NAS cannot be asked: yesterday's answer stands.
+    my $old = time - 2 * 86400;
+    utime($old, $old, "$dir/s.nas");
+    is($P->_nas_is_zfs('s', $scfg), 0,
+       'a stale record is still used when the NAS cannot be asked');
+
+    $kind->('nonsense');
+    is($P->_nas_is_zfs('s', $scfg), undef,
+       'a record that says neither is not read as either');
+}
 ok($P->volume_has_feature($scfg, 'template', 's', 'vm-100-disk-0'),
    'a disk can become a template');
 
@@ -195,4 +247,75 @@ is($P->_existing_volumes_warning('qnap1', undef), undef,
     $got = $P->_ensure_target(undef, 'qnap1', $cfg, undef);
     is($got->{chap_password}, undef,
        'without it the store is read, and before the first add the store is empty');
+}
+
+# ---------------------------------------------------------------------------
+# One rollback or clone at a time: the claim
+# ---------------------------------------------------------------------------
+#
+# The cluster storage lock is held only to look for a claim and write one. PVE
+# aborts whatever runs under that lock after 60 seconds, and a rollback on QTS
+# takes as long as writing the disk back.
+{
+    my $dir = File::Temp::tempdir(CLEANUP => 1);
+    local $PVE::Storage::Custom::QNAPSANPlugin::FORK_DIR = $dir;
+    no warnings qw(redefine once);
+    my $locked = 0;
+    local *PVE::Storage::Custom::QNAPSANPlugin::cluster_lock_storage = sub {
+        my ($class, $storeid, $shared, $timeout, $code) = @_;
+        $locked++;
+        return $code->();
+    };
+    my $f = $P->_fork_file('s');
+
+    is($P->_fork_busy('s'), undef, 'no claim, nothing running');
+    ok($P->_fork_claim('s', {}, "rolling 'vm-1-disk-0' back to 'a'"), 'a claim is taken');
+    ok(-f $f && $locked == 1, 'it is a file, written under the storage lock');
+    like($P->_fork_busy('s')->{text}, qr/rolling 'vm-1-disk-0' back to 'a', started on node \S+ at /,
+         'and it says what is running, where and since when');
+
+    eval { $P->_fork_claim('s', {}, "rolling 'vm-2-disk-0' back to 'b'") };
+    like($@, qr/cannot start, because this plugin runs one rollback or clone on a NAS at a time/,
+         'a second one is refused while the first is running');
+    like($@, qr/remove \Q$f\E/, 'and the refusal names the file');
+
+    $P->_fork_release('s');
+    ok(!-e $f, 'the claim is removed when the work returns');
+
+    # Somebody else's claim is not ours to remove.
+    open(my $fh, '>', $f) or die $!;
+    print $fh "node=othernode\npid=1\ntime=" . time . "\nwhat=rolling back\n"; close($fh);
+    $P->_fork_release('s');
+    ok(-e $f, 'a claim written by another node is left alone');
+
+    # Abandoned: ignored once it is older than any rollback is waited for.
+    open($fh, '>', $f) or die $!;
+    print $fh "node=othernode\npid=1\ntime=" . (time - 7200) . "\nwhat=rolling back\n"; close($fh);
+    my @w; { local $SIG{__WARN__} = sub { push @w, @_ }; is($P->_fork_busy('s'), undef,
+        'a claim older than the longest rollback is ignored'); }
+    like($w[0] // '', qr/ignoring a claim left by node othernode 120 minutes ago/, 'with a warning');
+
+    # Unreadable: not read as free.
+    open($fh, '>', $f) or die $!; print $fh "garbage\n"; close($fh);
+    like(($P->_fork_busy('s') // {})->{text} // '', qr/cannot be read/,
+         'a claim that cannot be read still refuses');
+    unlink $f;
+
+    # A rollback holds the claim for exactly as long as the NAS may be working.
+    my $outcome;
+    local *PVE::Storage::Custom::QNAPSANPlugin::_do_rollback = sub {
+        die "no claim while the rollback runs\n" if !-e $f;
+        die $outcome if defined $outcome;
+        return 1;
+    };
+    ok($P->volume_snapshot_rollback({}, 's', 'vm-1-disk-0', 'a') && !-e $f,
+       'a rollback that succeeded leaves no claim');
+    $outcome = "storage 's': rolling back failed: -1\n";
+    eval { $P->volume_snapshot_rollback({}, 's', 'vm-1-disk-0', 'a') };
+    ok($@ eq $outcome && !-e $f, 'nor does one the NAS refused');
+    $outcome = "storage 's': it has been running for 1800s. It has NOT failed: check the NAS.\n";
+    eval { $P->volume_snapshot_rollback({}, 's', 'vm-1-disk-0', 'a') };
+    ok($@ eq $outcome && -e $f,
+       'one the NAS has not finished KEEPS its claim: the NAS is still working');
+    unlink $f;
 }

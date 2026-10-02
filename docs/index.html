@@ -138,7 +138,7 @@ function pickLang() {
         <!-- The version sits on this line, immediately after the class, because
              <code>make release-check</code> reads it from here to prove the site has not
              drifted from the package. Do not reflow it. -->
-        <div class="hero__badge">v0.6.1 <span class="hero__badge-sep"></span> MIT <span class="hero__badge-sep"></span> <span class="lang-en">PRERELEASE</span><span class="lang-zh">預覽版</span></div>
+        <div class="hero__badge">v0.6.2 <span class="hero__badge-sep"></span> MIT <span class="hero__badge-sep"></span> <span class="lang-en">PRERELEASE</span><span class="lang-zh">預覽版</span></div>
         <h1 class="hero__title">jt-pve-storage-qnap</h1>
         <p class="hero__subtitle">
             <span class="lang-en">Proxmox VE uses a QNAP NAS over iSCSI directly as its VM storage back end.</span>
@@ -173,8 +173,8 @@ function pickLang() {
             <span class="lang-en">NOT YET TESTED ON HARDWARE</span><span class="lang-zh">尚未實機測試</span>
         </div>
         <div class="untested__body">
-            <span class="lang-en"><strong>This plugin has not yet worked against a real QNAP NAS.</strong> It has been run against one, on QuTS hero h6.0.1, and it does not work there: QuTS hero h6.0 and later are not supported. On the firmware it is written for it has never been run. It is written from the API documentation alone. It compiles, passes 220 unit tests and has been driven against a simulated NAS, and none of that proves it works on your NAS. <strong>Do not put production data on it.</strong> Run it against a spare NAS, or a pool you are willing to lose, and <a href="#status">read what is still unanswered</a> first.</span>
-            <span class="lang-zh"><strong>這個 plugin 還沒有在任何實體 QNAP NAS 上正常運作過。</strong>它在實機上執行過一次，韌體是 QuTS hero h6.0.1，結果是無法使用：不支援 QuTS hero h6.0 以上。它所針對的韌體還沒有在實機上執行過。它完全是依照 API 文件寫成的。它可以編譯，通過 220 個單元測試，也對模擬的 NAS 跑過完整的操作流程，但這些都不能證明它在你的 NAS 上能正常運作。<strong>請不要放正式資料。</strong>請用一台備用 NAS、或一個可以捨棄的儲存集區來測試，並先<a href="#status">確認還有哪些項目尚未驗證</a>。</span>
+            <span class="lang-en"><strong>This plugin has not yet worked against a real QNAP NAS.</strong> It has been run against one, on QuTS hero h6.0.1, and it does not work there: QuTS hero h6.0 and later are not supported. On the firmware it is written for it has never been run. It is written from the API documentation alone. It compiles, passes 247 unit tests and has been driven against a simulated NAS, and none of that proves it works on your NAS. <strong>Do not put production data on it.</strong> Run it against a spare NAS, or a pool you are willing to lose, and <a href="#status">read what is still unanswered</a> first.</span>
+            <span class="lang-zh"><strong>這個 plugin 還沒有在任何實體 QNAP NAS 上正常運作過。</strong>它在實機上執行過一次，韌體是 QuTS hero h6.0.1，結果是無法使用：不支援 QuTS hero h6.0 以上。它所針對的韌體還沒有在實機上執行過。它完全是依照 API 文件寫成的。它可以編譯，通過 247 個單元測試，也對模擬的 NAS 跑過完整的操作流程，但這些都不能證明它在你的 NAS 上能正常運作。<strong>請不要放正式資料。</strong>請用一台備用 NAS、或一個可以捨棄的儲存集區來測試，並先<a href="#status">確認還有哪些項目尚未驗證</a>。</span>
         </div>
     </div>
 </div>
@@ -261,8 +261,8 @@ function pickLang() {
                     <td class="yes"><span class="status-badge status-badge--supported">yes</span></td>
                 </tr>
                 <tr>
-                    <td><span class="lang-en">Template and linked clone</span><span class="lang-zh">範本與連結複製</span>
-                        <div class="cell-note"><span class="lang-en">Instant on QuTS hero. On QTS the same call copies, so a linked clone is as slow and as large as a full one, and Proxmox VE aborts it after 60 seconds. On QTS, make full clones.</span><span class="lang-zh">在 QuTS hero 上是即時的。在 QTS 上同一個呼叫是真的複製，所以連結複製跟完整複製一樣慢、一樣大，而且超過 60 秒會被 Proxmox VE 中止。在 QTS 上請使用完整複製。</span></div></td>
+                    <td><span class="lang-en">Template, and linked clone on QuTS hero</span><span class="lang-zh">範本，以及 QuTS hero 上的連結複製</span>
+                        <div class="cell-note"><span class="lang-en">A linked clone is instant on QuTS hero. On QTS the plugin makes no linked clone and no clone from a snapshot: clone a template with a full clone.</span><span class="lang-zh">連結複製在 QuTS hero 上是即時的。在 QTS 上，plugin 不提供連結複製，也不提供從快照複製：範本請使用完整複製。</span></div></td>
                     <td class="yes"><span class="status-badge status-badge--supported">yes</span></td>
                     <td class="yes"><span class="status-badge status-badge--supported">yes</span></td>
                 </tr>
@@ -295,7 +295,7 @@ function pickLang() {
                 </tr>
                 <tr>
                     <td><span class="lang-en">Read a snapshot as a device</span><span class="lang-zh">直接把快照當裝置讀取</span>
-                        <div class="cell-note"><span class="lang-en">Not possible. Roll back to it, or clone it into a disk of its own. The plugin declines the capability up front rather than starting an operation and failing partway.</span><span class="lang-zh">無法做到。請倒回到該快照，或把它複製成一顆獨立的磁碟。plugin 會在一開始就表明不支援，不會做到一半才失敗。</span></div></td>
+                        <div class="cell-note"><span class="lang-en">Not possible. Roll back to it, or on QuTS hero clone it into a disk of its own. The plugin declines the capability up front rather than starting an operation and failing partway.</span><span class="lang-zh">無法做到。請倒回到該快照，或在 QuTS hero 上把它複製成一顆獨立的磁碟。plugin 會在一開始就表明不支援，不會做到一半才失敗。</span></div></td>
                     <td class="yes"><span class="status-badge status-badge--planned">no</span></td>
                     <td class="yes"><span class="status-badge status-badge--planned">no</span></td>
                 </tr>
@@ -333,10 +333,10 @@ is now 12884901888 bytes rather than the 11811160064 requested.</code></pre>
         <span class="lang-zh">所以除非這台 NAS 位於儲存專用的網路，否則請設定 CHAP。新增 storage 時如果沒有設定，plugin 會提出警告。只有帳號沒有密碼的設定會被拒絕，因為空的 CHAP 密碼看起來已經啟用，實際上沒有任何保護。</span>
     </div>
 
-    <h3 class="subsection-title"><span class="lang-en">3. A linked clone copies on QTS and does not on QuTS hero</span><span class="lang-zh">三、連結複製在 QTS 上會真的複製資料，在 QuTS hero 上不會</span></h3>
+    <h3 class="subsection-title"><span class="lang-en">3. Linked clones are for QuTS hero. On QTS, make full clones</span><span class="lang-zh">三、連結複製只在 QuTS hero 提供，QTS 請使用完整複製</span></h3>
     <p>
-        <span class="lang-en">Every clone is made from a <em>snapshot</em>. The plugin detects which firmware it is talking to and uses the right form.</span>
-        <span class="lang-zh">所有複製都是從<strong>快照</strong>建立的。plugin 會偵測連接的是哪一種韌體，並使用對應的方式。</span>
+        <span class="lang-en">Every clone this plugin makes is made on the NAS, from a <em>snapshot</em>. On QuTS hero that is instant. On QTS it would copy the whole disk, and Proxmox VE aborts a storage-side clone after 60 seconds, so the plugin does not offer one there.</span>
+        <span class="lang-zh">這個 plugin 的每一次複製，都是在 NAS 上從<strong>快照</strong>建立的。在 QuTS hero 上是即時的。在 QTS 上會把整顆磁碟複製一份，而 Proxmox VE 會中止超過 60 秒的儲存端複製，所以 plugin 在 QTS 上不提供。</span>
     </p>
     <div class="table-wrap">
         <table>
@@ -349,7 +349,7 @@ is now 12884901888 bytes rather than the 11811160064 requested.</code></pre>
             </thead>
             <tbody>
                 <tr><td><span class="lang-en">Snapshot / rollback</span><span class="lang-zh">快照 / 倒回</span></td><td>✓</td><td>✓</td></tr>
-                <tr><td><span class="lang-en">Linked clone (<code>qm clone</code>)</span><span class="lang-zh">連結複製（<code>qm clone</code>）</span></td><td><span class="lang-en"><strong>copies</strong>, and is expected to fail on anything but a small disk</span><span class="lang-zh"><strong>真的複製</strong>，除了很小的磁碟之外預期會失敗</span></td><td><span class="lang-en"><strong>instant</strong></span><span class="lang-zh"><strong>即時</strong></span></td></tr>
+                <tr><td><span class="lang-en">Linked clone, clone from a snapshot</span><span class="lang-zh">連結複製、從快照複製</span></td><td><span class="lang-en"><strong>not offered</strong>: make a full clone</span><span class="lang-zh"><strong>不提供</strong>，請使用完整複製</span></td><td><span class="lang-en"><strong>instant</strong></span><span class="lang-zh"><strong>即時</strong></span></td></tr>
                 <tr><td><span class="lang-en">Deploying from templates at scale</span><span class="lang-zh">大量從範本部署</span></td><td><span class="lang-en">slow</span><span class="lang-zh">慢</span></td><td><span class="lang-en">fast</span><span class="lang-zh">快</span></td></tr>
             </tbody>
         </table>
@@ -576,8 +576,8 @@ dpkg -l jt-pve-storage-qnap | awk '/^ii/{print $3}'    # check what you got</cod
     --qnap-ssl-verify 0 \
     --content images</code></pre>
     <p>
-        <span class="lang-en">Then use it like any other storage: <code>qm create --scsi0 qnap1:32</code>, snapshots, rollback, templates, linked clones, live migration.</span>
-        <span class="lang-zh">之後的用法和其他 storage 相同：<code>qm create --scsi0 qnap1:32</code>、快照、倒回、範本、連結複製、線上遷移。</span>
+        <span class="lang-en">Then use it like any other storage: <code>qm create --scsi0 qnap1:32</code>, snapshots, rollback, templates, clones, live migration.</span>
+        <span class="lang-zh">之後的用法和其他 storage 相同：<code>qm create --scsi0 qnap1:32</code>、快照、倒回、範本、複製、線上遷移。</span>
     </p>
 </section>
 

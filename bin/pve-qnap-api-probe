@@ -33,7 +33,7 @@ use PVE::Storage::Custom::QNAP::ISCSI;
 # missing subroutine rather than about a missing tool.
 use PVE::Storage::Custom::QNAP::Command;
 
-my $VERSION = '0.6.1';
+my $VERSION = '0.6.2';
 
 my %opt = (port => 443, scheme => 'https');
 my $show_version;
@@ -166,8 +166,9 @@ if ($api->is_zfs) {
     ok "QuTS hero (is_zfs=1): instant clones are available, so a Proxmox VE"
      . " linked clone is instant";
 } else {
-    info "QTS (is_zfs=" . ($info->{is_zfs} // '0') . "): clones COPY."
-       . " A linked clone is as slow and as large as a full one.";
+    info "QTS (is_zfs=" . ($info->{is_zfs} // '0') . "): no linked clones and"
+       . " no clones from a snapshot with this plugin. Clone a template with a"
+       . " full clone. Snapshots and rollback work.";
 }
 
 if (defined(my $unsupported = $api->unsupported_firmware)) {

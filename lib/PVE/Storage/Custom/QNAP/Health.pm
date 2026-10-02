@@ -303,6 +303,15 @@ sub assert_usable {
        . " Take one snapshot of a test disk before you rely on"
        . " it.\n" if !$opt{quiet};
 
+    # QTS: said once, when the storage is added, because the first place an
+    # operator would otherwise meet it is a refused `qm clone` of a template.
+    warn "storage '$storeid': $model runs QTS. On QTS this plugin makes no"
+       . " linked clones and no clones from a snapshot: clone a template with a"
+       . " full clone (qm clone <vmid> <newid> --full 1). Snapshots and"
+       . " rollback work, and a rollback takes as long as the NAS needs to"
+       . " write the disk back. QuTS hero h5.x has instant clones.\n"
+        if !$opt{quiet} && !$api->is_zfs;
+
     return 1;
 }
 

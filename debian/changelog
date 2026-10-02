@@ -1,3 +1,22 @@
+jt-pve-storage-qnap (0.6.2-1) unstable; urgency=medium
+
+  * Fixed: a rollback on QTS was cut off after 60 seconds. It ran under the
+    cluster storage lock, which Proxmox VE aborts after 60 seconds, while the
+    NAS carried on writing the disk back. The lock is now held only to record
+    that a rollback is running, and the rollback is waited for as before.
+  * Fixed: a second rollback or clone started while one is running on the
+    same NAS is refused with a message that says what is running, on which
+    node and since when.
+  * Changed: on QTS the plugin no longer makes linked clones or clones from a
+    snapshot. A clone there copies the whole disk, and Proxmox VE runs a
+    storage-side clone under the same 60 second limit. Clone a template with
+    a full clone. Snapshots and rollback on QTS are unchanged, and so is
+    QuTS hero.
+  * Changed: a template made on QTS no longer keeps a snapshot of its own.
+  * 27 unit tests added, 247 in total.
+
+ -- Jason Cheng (Jason Tools) <jason@jason.tools>  Fri, 02 Oct 2026 12:57:25 +0800
+
 jt-pve-storage-qnap (0.6.1-1) unstable; urgency=medium
 
   * Fixed: QuTS hero h6.0 and later are refused when the storage is added.

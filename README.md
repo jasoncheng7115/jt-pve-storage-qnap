@@ -26,7 +26,7 @@ It has been run against one, on QuTS hero h6.0.1, and it does not work there:
 the storage is added. On the firmware it is written for (QTS 5.1 and QuTS hero
 h5.1) it has never been run.
 
-It is written from the API documentation alone. It compiles, it passes 220 unit
+It is written from the API documentation alone. It compiles, it passes 247 unit
 tests, and it has been driven through its whole lifecycle against a simulated
 NAS. **None of that proves it works on your NAS.**
 
@@ -68,7 +68,8 @@ is handed to the guest whole. That is why only two rows below differ.
 | Thin provisioning | yes | yes |
 | Resize (grow) | yes | yes |
 | Snapshot, delete snapshot, roll back | yes | yes² |
-| Template and linked clone | yes | yes |
+| Template | yes | yes |
+| Linked clone, clone from a snapshot | QuTS hero only⁵ | QuTS hero only⁵ |
 | Full clone, `pvesm export`/`import`, move to another storage | yes | yes |
 | Migration between nodes | yes | yes |
 | **Live** migration, with the guest running | yes | n/a³ |
@@ -88,8 +89,13 @@ container's root is mounted on the host, unlike a VM's disk.
 container migrates with a restart, and on this storage that restart moves no
 data.
 
-⁴ Roll back to it, or clone it into a disk of its own. The plugin declines the
-capability up front rather than starting an operation and failing partway.
+⁴ Roll back to it, or on QuTS hero clone it into a disk of its own. The plugin
+declines the capability up front rather than starting an operation and failing
+partway.
+
+⁵ On QTS the plugin offers no linked clone and no clone from a snapshot, and
+Proxmox VE refuses one before it starts. Clone a template with a full clone. The
+reason is the third point below.
 
 ## Three things that shape what this can do
 
@@ -117,21 +123,21 @@ So set CHAP unless the NAS is on a storage-only network. The plugin warns when
 you add a storage without it, and it refuses a CHAP username with no secret
 rather than writing an empty one.
 
-### 3. A linked clone copies on QTS and does not on QuTS hero
+### 3. Linked clones are for QuTS hero. On QTS, make full clones
 
-Every clone is made from a snapshot.
+Every clone this plugin makes is made from a snapshot, on the NAS.
 
 * **QuTS hero (ZFS):** the clone shares the snapshot's blocks. A Proxmox VE
   linked clone is immediate and takes no extra space.
-* **QTS (LVM):** the clone is a copy. A linked clone of a 200 GB template writes
-  200 GB. Proxmox VE aborts a storage-side clone that runs longer than 60
-  seconds, so on QTS a linked clone of anything but a small disk is expected to
-  fail. **On QTS, make full clones** (`qm clone <vmid> <newid> --full 1`). See
-  item 13 in [docs/TESTING.md](docs/TESTING.md).
+* **QTS (LVM):** the plugin makes **no linked clones and no clones from a
+  snapshot**. A clone on QTS copies the whole disk, and Proxmox VE aborts a
+  storage-side clone that runs longer than 60 seconds. Clone a template with a
+  full clone (`qm clone <vmid> <newid> --full 1`), which Proxmox VE copies
+  itself. Snapshots and rollback work on QTS, and a rollback takes as long as
+  the NAS needs to write the disk back.
 
-The plugin detects which it is talking to and uses the right form. If you are
-choosing hardware and expect to deploy from templates, this is the deciding
-factor.
+If you are choosing hardware and expect to deploy from templates, this is the
+deciding factor.
 
 ## Requirements
 
@@ -230,7 +236,7 @@ pvesm add qnapsan qnap1 \
 ```
 
 Then use it like any other storage: `qm create --scsi0 qnap1:32`, snapshots,
-rollback, templates, linked clones, live migration.
+rollback, templates, clones, live migration.
 
 Adding a storage whose prefix the NAS already has LUNs under produces a warning.
 If you added this storage here before, those are its own disks. If a *different*

@@ -108,11 +108,12 @@ plugin supports.
 
 8. **Concurrency.** `get_return` is keyed by CGI name rather than by job, so a
    clone and a rollback in flight at once cannot be told apart. The plugin
-   serialises both with PVE's cluster storage lock. Worth confirming that
-   nothing else on the NAS (a scheduled snapshot job, the web interface) shares
-   that channel. What `get_return` wants as `cginame` is unmeasured too:
-   the plugin sends `snapshot.cgi`, and if QTS wants something else, a clone or
-   a rollback never collects its result.
+   therefore runs one at a time on a NAS, across the cluster: a second one is
+   refused while the first is running. Worth confirming that nothing else on
+   the NAS (a scheduled snapshot job, the web interface) shares that channel.
+   What `get_return` wants as `cginame` is unmeasured too: the plugin sends
+   `snapshot.cgi`, and if QTS wants something else, a clone or a rollback never
+   collects its result.
 
 9. **Session lifetime.** How long a `sid` lasts is unknown. The plugin
    re-logs-in once when a call reports `authPassed 0`.
@@ -143,21 +144,15 @@ plugin supports.
     [LIMITS.md](LIMITS.md). *How to check:* map LUNs to one target until the NAS
     refuses, and note the count and what it answered.
 
-13. **How long does a clone take on QTS, and does it finish inside Proxmox VE's
-    time limit?** Proxmox VE runs a storage-side clone under a cluster lock,
-    and it aborts whatever runs under that lock after 60 seconds. On QuTS hero
-    a clone is instant. On QTS the NAS copies the whole disk, so a linked clone
-    of anything but a small disk is expected to run past the limit. The task
-    then fails with a "locked command timed out" message, the NAS carries on
-    copying, and the disk it finishes belongs to no guest: it shows in
-    `pvesm list` and has to be removed with `pvesm free`. A rollback waits
-    under the same lock. None of this has been measured, including how large a
-    disk still fits. Until it has, **on QTS make full clones**:
-    `qm clone <vmid> <newid> --full 1`, or *Mode: Full Clone* in the web
-    interface. Proxmox VE copies those itself and they are not under the
-    limit. A full clone cannot be taken from a snapshot on this storage. To
-    check: on QTS, make a template of a disk with 100 GB written, clone it
-    with `--full 0`, and note how long the NAS takes and what the task reports.
+13. **How long does a rollback take on QTS?** A rollback there takes as long as
+    the NAS needs to write the disk back, and how long that is for a given size
+    is unmeasured. The plugin waits up to 30 minutes. If the NAS needs longer,
+    the plugin stops waiting and says that the rollback has **not** failed: the
+    guest stays locked, and the NAS should be checked before it is unlocked,
+    because starting a guest on a disk that is still being written back runs it
+    on a half-restored disk. While a rollback runs, any other rollback or clone
+    on the same NAS is refused. To check: on QTS, roll back a disk with 100 GB
+    written and note how long the NAS takes.
 
 ### Worth knowing
 
@@ -212,7 +207,7 @@ qm rollback 9999 s1
 # 6. Resize (item 3).
 qm resize 9999 scsi0 +1G
 
-# 7. Template and linked clone.
+# 7. Template and clone. On QTS add --full 1: linked clones are QuTS hero only.
 qm template 9999
 qm clone 9999 9998
 

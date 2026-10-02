@@ -23,9 +23,14 @@ package PVE::Storage::Custom::QNAPSANPlugin;
 #
 #   * **A clone and a rollback FORK on the NAS, and their result is collected
 #     through a channel keyed by CGI NAME rather than by job.** Two of them in
-#     flight at once cannot be told apart. So both are serialised across the
-#     whole cluster — see `_with_fork_lock`, which is not an optimisation and
-#     not defensive coding.
+#     flight at once cannot be told apart. So only one runs on a NAS at a time,
+#     across the whole cluster — see `_fork_claim`, which is not an optimisation
+#     and not defensive coding.
+#
+#   * **A clone exists on QuTS hero only.** There it is instant. On QTS the same
+#     call copies the whole disk, and PVE runs a storage-side clone under a lock
+#     it aborts after 60 seconds, so this plugin does not offer one on QTS: a
+#     template there is cloned by PVE as a full clone.
 #
 #   * **This plugin does not manage per-initiator access.** It sets CHAP on the
 #     target's default policy entry and nothing narrower, so CHAP is the access
@@ -35,6 +40,7 @@ use strict;
 use warnings;
 
 use PVE::Tools qw(run_command);
+use PVE::INotify;
 use PVE::Storage::Plugin;
 use PVE::JSONSchema qw(get_standard_option);
 
@@ -470,28 +476,180 @@ sub _ensure_target {
     );
 }
 
-# CLUSTER-WIDE SERIALISATION FOR ANYTHING THAT FORKS ON THE NAS.
+# ONE FORKED OPERATION AT A TIME, CLUSTER-WIDE.
 #
 # `clone_qsnapshot` and `recover_snapshot` both answer `<fork>1</fork>` and
 # leave their real result to be collected from
 # `snapshot.cgi?func=get_return&cginame=snapshot.cgi`. **That channel is keyed
-# by the CGI's name, not by a job id.** Two clones started at the same moment
-# from two nodes are indistinguishable, and whichever asks first may collect the
-# other's answer — so one of them would report someone else's success or
-# someone else's failure.
+# by the CGI's name, not by a job id.** Two started at the same moment from two
+# nodes are indistinguishable, and whichever asks first may collect the other's
+# answer, so one of them would report someone else's success or someone else's
+# failure.
 #
-# There is nothing to fix in the API and nothing to detect afterwards. The only
-# correct response is to make sure only one is ever in flight, and the only
-# scope that covers is the cluster.
+# So only one is ever in flight, and the only scope that covers is the cluster.
 #
-# `clone_image` is NOT wrapped here: PVE's own `vdisk_clone` already holds
-# exactly this lock around it, and taking a cfs storage lock twice in one
-# process deadlocks. Rollback is not called under any storage lock, so it takes
-# its own — and because it is the SAME lock, a rollback on one node and a clone
-# on another are mutually exclusive, which is the property that matters.
-sub _with_fork_lock {
-    my ($class, $storeid, $scfg, $code) = @_;
-    return $class->cluster_lock_storage($storeid, $scfg->{shared}, undef, $code);
+# IT USED TO BE THE CLUSTER STORAGE LOCK, HELD FOR THE WHOLE OPERATION, AND
+# THAT WAS WRONG. Proxmox VE aborts whatever runs under a cfs lock after 60
+# seconds (`cfs_lock` in PVE::Cluster arms an alarm), and a rollback on QTS
+# takes as long as writing the disk back. The rollback was therefore cut off at
+# one minute with the NAS still overwriting the LUN, the guest left locked, and
+# nothing to say the disk was half restored.
+#
+# What is held now is a CLAIM: a small file in /etc/pve/priv, which every node
+# sees. The storage lock is taken only for the moment it takes to look for a
+# claim and write one, and the operation itself runs with no time limit but its
+# own. The claim is removed when the operation returns, whatever it returns.
+#
+# A claim nobody removed (the task was killed, the node went down) stands for
+# FORK_CLAIM_MAX_AGE and is then ignored. Until then it REFUSES, because the
+# NAS may well still be working: a claim that cannot be vouched for is not read
+# as "free". The message names the file, for the operator who knows better.
+#
+# `clone_image` does not write a claim. PVE's `vdisk_clone` holds the storage
+# lock around the whole of it, a clone exists only on QuTS hero where it is
+# instant, and taking a cfs storage lock twice in one process deadlocks. It
+# READS the claim, so a clone does not start while a rollback is running, and a
+# rollback cannot write its claim while a clone holds the lock.
+our $FORK_DIR = '/etc/pve/priv/storage';
+
+# The longest a rollback is waited for, plus slack for clocks that disagree.
+use constant FORK_CLAIM_MAX_AGE => 1800 + 300;
+
+sub _fork_file {
+    my ($class, $storeid) = @_;
+    (my $safe = $storeid) =~ s/[^A-Za-z0-9_.-]/_/g;
+    return "$FORK_DIR/$safe.qnap-busy";
+}
+
+# The claim in force, as a hash with a `text` describing it, or undef when
+# there is none. A claim that cannot be read IS one: see above.
+sub _fork_busy {
+    my ($class, $storeid) = @_;
+
+    my $file = $class->_fork_file($storeid);
+    return undef if !-e $file;
+
+    my $raw = eval { PVE::Tools::file_get_contents($file) };
+    my %c = map { /\A(\w+)=(.*)\z/ ? ($1 => $2) : () } split /\n/, ($raw // '');
+
+    return { text => "a claim that cannot be read ($file)", file => $file }
+        if !defined $c{time} || $c{time} !~ /\A\d+\z/;
+
+    my $age = time - $c{time};
+    if ($age > FORK_CLAIM_MAX_AGE) {
+        warn "storage '$storeid': ignoring a claim left by node "
+           . ($c{node} // '?') . " " . int($age / 60) . " minutes ago ("
+           . ($c{what} // '?') . "). Whatever made it did not finish"
+           . " cleanly.\n";
+        return undef;
+    }
+
+    return {
+        %c,
+        file => $file,
+        text => ($c{what} // 'an operation') . ", started on node "
+              . ($c{node} // '?') . " at " . scalar(localtime($c{time})),
+    };
+}
+
+sub _fork_claim {
+    my ($class, $storeid, $scfg, $what) = @_;
+
+    return $class->cluster_lock_storage($storeid, $scfg->{shared}, undef, sub {
+        my $busy = $class->_fork_busy($storeid);
+        die "storage '$storeid': $what cannot start, because this plugin runs"
+          . " one rollback or clone on a NAS at a time and another is still"
+          . " running: $busy->{text}. Wait for it to finish. If that task was"
+          . " killed and the NAS is idle, remove $busy->{file}.\n" if $busy;
+
+        mkdir $FORK_DIR;
+        my $body = "node=" . PVE::INotify::nodename() . "\npid=$$\ntime=" . time
+                 . "\nwhat=$what\n";
+        ## no critic (ValuesAndExpressions::ProhibitLeadingZeros)
+        # A file mode, as in `_write_creds`.
+        PVE::Tools::file_set_contents($class->_fork_file($storeid), $body, 0600);
+        return 1;
+    });
+}
+
+# Only the claim this process wrote. One left by somebody else is theirs.
+sub _fork_release {
+    my ($class, $storeid) = @_;
+
+    my $file = $class->_fork_file($storeid);
+    my $raw = eval { PVE::Tools::file_get_contents($file) } // '';
+    my $mine = "node=" . PVE::INotify::nodename() . "\npid=$$\n";
+    unlink $file if index($raw, $mine) == 0;
+    return;
+}
+
+# ---------------------------------------------------------------------------
+# What kind of NAS is behind a storage
+# ---------------------------------------------------------------------------
+
+# QuTS hero or QTS, as 1 / 0 / undef. `volume_has_feature` needs it and is
+# handed no session, so the answer is kept per node and refreshed once a day.
+#
+# THREE-VALUED, and undef is not "QTS" and not "QuTS hero": it means the NAS
+# could not be asked and nothing is on file. The one caller treats that as "do
+# not offer it", which is the answer that cannot start something the NAS will
+# then be unable to finish.
+our $STATE_DIR = '/var/lib/jt-pve-storage-qnap';
+use constant NAS_KIND_TTL => 86400;
+
+sub _kind_file {
+    my ($class, $storeid) = @_;
+    (my $safe = $storeid) =~ s/[^A-Za-z0-9_.-]/_/g;
+    return "$STATE_DIR/$safe.nas";
+}
+
+# Called wherever a session already exists, so the file is usually fresh and
+# `_nas_is_zfs` usually asks nobody.
+sub _remember_nas_kind {
+    my ($class, $storeid, $api) = @_;
+
+    my $info = eval { $api->sysinfo } // {};
+    # A NAS that did not describe itself has told us nothing. Writing "QTS" for
+    # it would turn a failed request into a decision.
+    return undef if !defined $info->{storage_v2};
+
+    my $kind = $api->is_zfs ? 'zfs' : 'lvm';
+    eval {
+        mkdir $STATE_DIR;
+        PVE::Tools::file_set_contents($class->_kind_file($storeid), "$kind\n");
+    };
+    return $kind;
+}
+
+sub _nas_is_zfs {
+    my ($class, $storeid, $scfg) = @_;
+
+    my $file = $class->_kind_file($storeid);
+    my $read = sub {
+        my $raw = eval { PVE::Tools::file_get_contents($file) } // '';
+        return $raw =~ /\A(zfs|lvm)\s*\z/ ? $1 : undef;
+    };
+
+    my $kind;
+    my @st = stat($file);
+    $kind = $read->() if @st && time - $st[9] < NAS_KIND_TTL;
+
+    if (!defined $kind) {
+        # The short timeout: this is asked from a feature check, which the web
+        # interface makes while somebody is waiting on a dialog.
+        $kind = eval {
+            my $api = $class->_api($storeid, $scfg, status => 1);
+            my $k = $class->_remember_nas_kind($storeid, $api);
+            eval { $api->logout };
+            $k;
+        };
+        # Could not ask. What was true yesterday is better than nothing: a NAS
+        # does not change its operating system without being reinstalled.
+        $kind //= $read->();
+    }
+
+    return undef if !defined $kind;
+    return $kind eq 'zfs' ? 1 : 0;
 }
 
 # ---------------------------------------------------------------------------
@@ -541,6 +699,7 @@ sub on_add_hook {
     my $api = $class->_api($storeid, $scfg, creds => \%creds);
     PVE::Storage::Custom::QNAP::Health::assert_usable($api,
         pool_id => $class->_pool($scfg));
+    $class->_remember_nas_kind($storeid, $api);
 
     # Create the storage's target now rather than at the first allocation, so
     # that a NAS which refuses it — the target ceiling, a name QTS will not take
@@ -627,6 +786,8 @@ sub on_delete_hook {
     my $cleanup = PVE::Storage::Custom::QNAP::Deferred->new(sub {
         $class->_delete_creds($storeid);
         PVE::Storage::Custom::QNAP::API::clear_credential_latch(undef, $storeid);
+        unlink $class->_kind_file($storeid);
+        unlink $class->_fork_file($storeid);
     });
 
     my $api = eval { $class->_api($storeid, $scfg) } or return;
@@ -770,6 +931,7 @@ sub _revalidate {
     my $api = $class->_api($storeid, $scfg, creds => $creds);
     PVE::Storage::Custom::QNAP::Health::assert_usable($api,
         pool_id => $class->_pool($scfg), quiet => 1);
+    $class->_remember_nas_kind($storeid, $api);
 
     # Push everything this plugin owns but cannot read back, on EVERY target
     # this storage owns.
@@ -1982,14 +2144,24 @@ sub volume_snapshot_delete {
 sub volume_snapshot_rollback {
     my ($class, $scfg, $storeid, $volname, $snap) = @_;
 
-    # THE CLUSTER LOCK, and it is not optional. `recover_snapshot` forks on the
-    # NAS and its result is collected from a channel keyed by CGI name — see
-    # `_with_fork_lock`. Nothing in PVE holds a storage lock around a rollback,
-    # so this is the only thing standing between two of them and each other's
-    # answers.
-    return $class->_with_fork_lock($storeid, $scfg, sub {
-        $class->_do_rollback($storeid, $scfg, $volname, $snap);
-    });
+    # A CLAIM, not the cluster lock: see `_fork_claim`. Nothing in PVE holds a
+    # storage lock around a rollback, so this is what stands between two of
+    # them and each other's answers, and it must not put a time limit on work
+    # the NAS needs as long as it needs.
+    $class->_fork_claim($storeid, $scfg, "rolling '$volname' back to '$snap'");
+
+    my $ok = eval { $class->_do_rollback($storeid, $scfg, $volname, $snap) };
+    my $err = $@;
+
+    # Released, with one exception: the NAS was waited for as long as this
+    # plugin waits and has still not answered. It is then STILL WORKING, so the
+    # claim stays and runs out on its own. Releasing it would let the next
+    # rollback start on top of this one.
+    $class->_fork_release($storeid)
+        if !$err || $err !~ /has NOT failed/;
+
+    die $err if $err;
+    return $ok;
 }
 
 sub _do_rollback {
@@ -2117,18 +2289,18 @@ sub _plausible_epoch {
     return undef;
 }
 
-# QTS HAS NO LUN-TO-LUN CLONE. `clone_qsnapshot` clones a SNAPSHOT, and it is
+# THERE IS NO LUN-TO-LUN CLONE. `clone_qsnapshot` clones a SNAPSHOT, and it is
 # the only clone there is — so every path through here goes via one.
 #
-# On QuTS hero the same call without a destination pool is an INSTANT clone: the
-# new LUN shares the snapshot's blocks instead of copying them, which is what
-# makes a Proxmox VE linked clone actually cheap. The snapshot then backs the
-# clone and must not be removed, which is why `create_base` leaves one behind
-# and why `free_image` explains itself when it cannot delete one.
+# QuTS HERO ONLY. There the call without a destination pool is an INSTANT
+# clone: the new LUN shares the snapshot's blocks instead of copying them, which
+# is what makes a Proxmox VE linked clone actually cheap. The snapshot then
+# backs the clone and must not be removed, which is why `create_base` leaves one
+# behind and why `free_image` explains itself when it cannot delete one.
 #
-# NOT wrapped in `_with_fork_lock`: PVE's own `vdisk_clone` already holds that
-# exact lock around this call, and taking a cfs storage lock twice in one
-# process deadlocks.
+# NOT wrapped in `_fork_claim`: PVE's own `vdisk_clone` already holds the
+# storage lock around this call, and taking a cfs storage lock twice in one
+# process deadlocks. It reads the claim instead.
 sub clone_image {
     my ($class, $scfg, $storeid, $volname, $vmid, $snap) = @_;
 
@@ -2136,6 +2308,29 @@ sub clone_image {
         $class->parse_volname($volname);
 
     my $api = $class->_api($storeid, $scfg);
+    $class->_remember_nas_kind($storeid, $api);
+
+    # QuTS HERO ONLY. `volume_has_feature` does not offer a clone on QTS, so
+    # PVE does not get here on one. This is for a caller that did not ask, and
+    # for a kind on file that has gone stale.
+    if (!$api->is_zfs) {
+        eval { $api->logout };
+        die "storage '$storeid': this NAS runs QTS, and this plugin does not"
+          . " make linked clones or clones from a snapshot on QTS: a clone"
+          . " there takes longer than Proxmox VE allows a storage operation to"
+          . " run. Make a full clone instead (qm clone <vmid> <newid> --full"
+          . " 1). QuTS hero h5.x has instant clones.\n";
+    }
+
+    # Not while a rollback is running: see `_fork_claim`.
+    if (my $busy = $class->_fork_busy($storeid)) {
+        eval { $api->logout };
+        die "storage '$storeid': a clone cannot start, because this plugin runs"
+          . " one rollback or clone on a NAS at a time and another is still"
+          . " running: $busy->{text}. Wait for it to finish. If that task was"
+          . " killed and the NAS is idle, remove $busy->{file}.\n";
+    }
+
     my $lun = $class->_lun($api);
     my $src = PVE::Storage::Custom::QNAP::Naming::lun_name($storeid, $volname);
     my $obj = $lun->get($src) or die "storage '$storeid': no LUN '$src'\n";
@@ -2143,8 +2338,7 @@ sub clone_image {
     my $target = $class->find_free_diskname($storeid, $scfg, $vmid, 'raw');
     my $dst = PVE::Storage::Custom::QNAP::Naming::lun_name($storeid, $target);
 
-    my $instant = $api->is_zfs;
-    my ($snapshot_id, $temp_id);
+    my $snapshot_id;
 
     if (defined $snap) {
         my ($found) = grep { ($_->{snapname} // '') eq $snap }
@@ -2199,10 +2393,9 @@ sub clone_image {
             lun_index   => $obj->{index},
             name        => $tmp,
             description => "Proxmox VE $storeid clone source");
-        # Removed again below when the clone COPIED. An instant clone would lose
-        # its backing store with it, so it is kept — and `free_image` on the
-        # source explains itself if it then cannot delete it.
-        $temp_id = $snapshot_id if !$instant;
+        # Kept. An instant clone has this snapshot as its backing store and
+        # would lose it with it, and `free_image` on the source explains itself
+        # if it then cannot delete it.
     }
 
     # Map the clone onto this storage's target as it is created: the alternative
@@ -2214,19 +2407,11 @@ sub clone_image {
             snapshot_id  => $snapshot_id,
             name         => $dst,
             pool_id      => $class->_pool($scfg),
-            instant      => $instant,
+            instant      => 1,
             target_index => $t->{index},
         );
     };
     my $err = $@;
-
-    # The temporary snapshot goes whatever happened, but ONLY when it was this
-    # call that made it and only when the clone did not need it.
-    if (defined $temp_id) {
-        eval { $lun->snapshot_delete($temp_id) };
-        warn "storage '$storeid': could not remove the temporary snapshot taken"
-           . " to clone '$src': $@" if $@;
-    }
 
     if (!$new) {
         eval { $api->logout };
@@ -2274,6 +2459,15 @@ sub create_base {
         if $lun->get($new);
 
     my $renamed = $lun->rename($obj, $new);
+
+    # QTS: a template there is cloned by PVE itself, a full clone that reads the
+    # disk, so there is nothing for a base snapshot to do except occupy one of
+    # the NAS's snapshot slots.
+    $class->_remember_nas_kind($storeid, $api);
+    if (!$api->is_zfs) {
+        eval { $api->logout };
+        return $newname;
+    }
 
     my $tmp = PVE::Storage::Custom::QNAP::Naming::temp_snapshot_name(
         'base', $renamed->{index});
@@ -2334,11 +2528,13 @@ sub volume_has_feature {
     my $features = {
         snapshot   => { current => 1, snap => 1 },
 
-        # `clone` from a snapshot and from a template both work: both go through
-        # `clone_qsnapshot`, which is the only clone QTS has.
+        # `clone` from a snapshot and from a template both go through
+        # `clone_qsnapshot`. `current` is claimed too, and it costs a snapshot,
+        # which `clone_image` takes itself.
         #
-        # `current` is claimed too, and it costs a temporary snapshot — which is
-        # taken and removed inside `clone_image`, so a caller never sees it.
+        # QuTS HERO ONLY, decided below. On QTS that call copies the whole
+        # disk, PVE runs it under a lock it aborts after 60 seconds, and the
+        # NAS would carry on copying into a disk no guest owns.
         clone      => { base => 1, current => 1, snap => 1 },
         template   => { current => 1 },
 
@@ -2361,8 +2557,12 @@ sub volume_has_feature {
     };
 
     my $key = defined $snapname ? 'snap' : ($isBase ? 'base' : 'current');
-    return 1 if $features->{$feature}->{$key};
-    return undef;
+    return undef if !$features->{$feature}->{$key};
+
+    # Offered only where it is known to be QuTS hero. Not known is not offered.
+    return undef if $feature eq 'clone' && !$class->_nas_is_zfs($storeid, $scfg);
+
+    return 1;
 }
 
 1;

@@ -54,7 +54,7 @@
 
 7. **`authLogin.cgi` 是否接受 POST**？這個 plugin 的每一個呼叫都是 POST，憑證不會出現在 URL 裡。如果剛取得的工作階段在另一支 CGI 仍然不被承認，plugin 會判斷韌體沒有讀取 POST 內容，改用 GET 重送那一個呼叫，但只限不含密碼的呼叫。**登入絕不會用 GET 送出**，所以只讀取查詢字串的韌體完全無法使用。這是第一次上機最可能失敗的原因。在 QuTS hero h6.0.1 上，以 POST 送出的登入是被接受的。那個韌體不支援，所以對受支援的韌體來說，這個問題仍然沒有答案。
 
-8. **同時執行**。`get_return` 是以 CGI 名稱而不是以工作為依據，所以同時進行的複製與倒回無法區分。plugin 用 PVE 的叢集 storage 鎖讓兩者依序執行。需要確認 NAS 上有沒有別的來源（排程快照、網頁介面）也使用同一個管道。`get_return` 的 `cginame` 應該送什麼也還沒有實測：plugin 送的是 `snapshot.cgi`，如果 QTS 要的是別的寫法，複製或倒回就永遠拿不到結果。
+8. **同時執行**。`get_return` 是以 CGI 名稱而不是以工作為依據，所以同時進行的複製與倒回無法區分。因此 plugin 在同一台 NAS 上一次只執行一個，範圍是整個叢集：第一個還在執行時，第二個會被拒絕。需要確認 NAS 上有沒有別的來源（排程快照、網頁介面）也使用同一個管道。`get_return` 的 `cginame` 應該送什麼也還沒有實測：plugin 送的是 `snapshot.cgi`，如果 QTS 要的是別的寫法，複製或倒回就永遠拿不到結果。
 
 9. **工作階段的有效時間**。`sid` 能維持多久還不知道。呼叫回報 `authPassed 0` 時，plugin 會重新登入一次。
 
@@ -64,7 +64,7 @@
 
 12. **單一 target 能對應幾個 LUN？LUN 與 target 是否共用同一個上限**？預設的 `qnap-target-mode=shared` 會把這個 storage 的每顆磁碟都對應到同一個 target，所以那個 target 的上限就是這個 storage 的上限。NAS 會回報 LUN 總數與 target 總數的上限，但沒有「每個 target 幾個 LUN」的上限。Synology 的相關專案實測過單一 target 對應 200 個 LUN 沒有問題，但那不能代表 QTS。如果 QTS 的上限比較低，可以改用 `qnap-target-mode=per-volume`，代價是改受 target 總數的上限限制。QNAP 的使用手冊另外寫了 LUN 與 target **合計** 255，而 plugin 是分開檢查這兩個上限的，見 [LIMITS_zh-TW.md](LIMITS_zh-TW.md)。確認方式：對同一個 target 持續對應 LUN，直到 NAS 拒絕，記下當時的數量與 NAS 的回應。
 
-13. **在 QTS 上複製一顆磁碟要多久？能不能在 Proxmox VE 的時間上限內完成**？Proxmox VE 會在一把叢集鎖裡執行儲存端的複製，鎖內的動作超過 60 秒就會被中止。在 QuTS hero 上複製是即時的。在 QTS 上，NAS 會複製整顆磁碟，所以除了很小的磁碟之外，連結複製預期都會超過這個上限。這時工作會失敗，訊息是「locked command timed out」，NAS 則會繼續複製，完成之後的那顆磁碟不屬於任何 guest：它會出現在 `pvesm list`，需要用 `pvesm free` 移除。倒回也是在同一把鎖裡等待。這些都還沒有量測過，包含多大的磁碟還來得及。在量測之前，**在 QTS 上請使用完整複製**：`qm clone <vmid> <newid> --full 1`，或在網頁介面選擇「完整複製」。完整複製是由 Proxmox VE 自己複製資料，不受這個上限限制。這個 storage 無法從快照做完整複製。確認方式：在 QTS 上，把一顆已寫入 100 GB 的磁碟轉成範本，用 `--full 0` 複製，記下 NAS 花了多久，以及工作回報了什麼。
+13. **在 QTS 上倒回需要多久**？在 QTS 上，倒回需要的時間取決於 NAS 把磁碟寫回去要多久，各種容量實際需要多久還沒有量測過。plugin 最多等待 30 分鐘。如果 NAS 需要更久，plugin 會停止等待，並說明倒回**沒有**失敗：這時 guest 仍然是鎖定的，解除鎖定之前請先到 NAS 確認，因為在磁碟還沒寫完時啟動 guest，等於用還原到一半的磁碟開機。倒回執行期間，同一台 NAS 上的其他倒回與複製都會被拒絕。確認方式：在 QTS 上，倒回一顆已寫入 100 GB 的磁碟，記下 NAS 花了多久。
 
 ### 其他需要知道的事
 
@@ -111,7 +111,7 @@ qm rollback 9999 s1
 # 6. 擴充容量（第 3 項）。
 qm resize 9999 scsi0 +1G
 
-# 7. 範本與連結複製。
+# 7. 範本與複製。在 QTS 上請加 --full 1：連結複製只在 QuTS hero 提供。
 qm template 9999
 qm clone 9999 9998
 

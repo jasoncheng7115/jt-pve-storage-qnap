@@ -32,7 +32,7 @@ use lib '/usr/share/perl5';
 use PVE::Storage;
 use PVE::Storage::Custom::QNAPSANPlugin;
 
-my $VERSION = '0.6.1';
+my $VERSION = '0.6.2';
 
 my ($remove, $all, $show_version, $help);
 my @storages;

@@ -23,12 +23,13 @@ Description: QNAP NAS storage plugin for Proxmox VE
  shared LUN carved up locally.
  .
  Registers the storage type "qnapsan". It requires Storage Manager V2, which
- QTS 4.5.1 and every QuTS hero provide; the plugin refuses a firmware that
- reports the legacy Storage Manager rather than failing later.
+ QTS 4.5.1 and QuTS hero h5.x provide; the plugin refuses a firmware that
+ reports the legacy Storage Manager rather than failing later. QuTS hero h6.0
+ and later are not supported and are refused the same way. Linked clones are
+ made on QuTS hero only; on QTS a template is cloned with a full clone.
  .
- Every 0.x release is a prerelease. Nothing array-facing has run against a NAS
- yet; what has and has not been
- exercised against real hardware is listed in
+ Every 0.x release is a prerelease. What has and has not been exercised
+ against real hardware is listed in
  /usr/share/doc/jt-pve-storage-qnap/TESTING.md. Read it before putting data on
  this.
  .

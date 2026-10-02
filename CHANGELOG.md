@@ -7,6 +7,40 @@ The register of what has been verified against real hardware, and what has not,
 is [docs/TESTING.md](docs/TESTING.md). It is more useful than this file for
 deciding whether to trust a given release.
 
+## [0.6.2] - 2026-10-02
+
+### Fixed
+
+- **A rollback on QTS was cut off after 60 seconds.** A rollback there takes as
+  long as the NAS needs to write the disk back. The plugin ran it under the
+  cluster storage lock, and Proxmox VE aborts whatever runs under that lock
+  after 60 seconds: the task failed, the guest stayed locked, and the NAS
+  carried on writing to the disk. The lock is now held only for the moment it
+  takes to record that a rollback is running. The rollback itself is waited for
+  as long as before, 30 minutes.
+- **One rollback or clone at a time, and the refusal says why.** A second one
+  started meanwhile on the same NAS, from any node, is refused with a message
+  that says what is running, on which node and since when.
+
+### Changed
+
+- **On QTS the plugin no longer makes linked clones or clones from a snapshot.**
+  A clone on QTS copies the whole disk on the NAS, and Proxmox VE runs a
+  storage-side clone under the same 60 second limit, in a lock of its own that
+  a plugin cannot avoid. `qm clone` of a template on QTS is now refused before
+  it starts, with "Linked clone feature is not supported". Clone it with
+  `--full 1`, which Proxmox VE copies itself. Snapshots and rollback on QTS are
+  unchanged, and so is everything on QuTS hero, where a clone is instant.
+- A template made on QTS no longer keeps a snapshot of its own, since nothing
+  can hang off it there.
+- `pvesm add` says so when the NAS runs QTS, and `pve-qnap-api-probe` says the
+  same.
+- [docs/TESTING.md](docs/TESTING.md) gained an item on how long a rollback
+  takes on QTS, seventeen items in all.
+- 27 unit tests added, 247 in total. The simulated NAS now aborts whatever runs
+  under the storage lock after 60 seconds, as Proxmox VE does, and a rollback
+  that takes 65 seconds passes against it.
+
 ## [0.6.1] - 2026-10-02
 
 The first report from a real NAS. It ran QuTS hero h6.0.1, and the plugin does
