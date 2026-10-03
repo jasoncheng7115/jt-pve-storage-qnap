@@ -14,7 +14,7 @@ BEGIN {
         or plan skip_all => 'Proxmox VE is not installed on this machine';
 }
 
-plan tests => 67;
+plan tests => 70;
 
 use PVE::Storage;
 use PVE::Storage::Custom::QNAPSANPlugin;
@@ -120,6 +120,18 @@ ok($P->volume_has_feature($scfg, 'rename', 's', 'base-1-disk-0/vm-2-disk-0'),
     ok($P->volume_has_feature($scfg, 'template', 's', 'vm-100-disk-0'),
        'QTS: a disk can still become a template');
 
+    # QuTS hero h6: disks only, until the rest is measured there.
+    $kind->('zfs6');
+    is($P->_nas_kind('s', $scfg), 'zfs6', 'QuTS hero h6 on file is read as h6');
+    ok(!$P->volume_has_feature($scfg, 'snapshot', 's', 'vm-100-disk-0')
+       && !$P->volume_has_feature($scfg, 'template', 's', 'vm-100-disk-0')
+       && !$P->volume_has_feature($scfg, 'rename', 's', 'vm-100-disk-0')
+       && !$P->volume_has_feature($scfg, 'clone', 's', 'vm-100-disk-0'),
+       'h6: no snapshot, template, rename or clone is offered');
+    ok($P->volume_has_feature($scfg, 'copy', 's', 'vm-100-disk-0'),
+       'h6: a full clone is, because PVE copies it itself');
+
+    $kind->('lvm');
     # Stale, and the NAS cannot be asked: yesterday's answer stands.
     my $old = time - 2 * 86400;
     utime($old, $old, "$dir/s.nas");

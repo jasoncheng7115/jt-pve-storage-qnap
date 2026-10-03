@@ -2,8 +2,8 @@
 
 Short version: **QTS 5.1 and QuTS hero h5.1 are what it is written against.**
 Anything older than QTS 4.5.1 is refused when the storage is added, not
-discovered later. **QuTS hero h6.0 and later are not supported yet**, and are
-refused the same way.
+discovered later. **On QuTS hero h6.0 and later it creates, deletes and attaches
+disks; snapshots, rollback and clones are not available there yet.**
 
 This page is deliberately specific about the difference between *supported*,
 *expected to work* and *not supported*, because two of those are promises and
@@ -22,15 +22,15 @@ The firmware says which it has. `authLogin.cgi` returns:
 |---|---|---|---|
 | absent, or `0` | any | Legacy Storage Manager | **Refused** |
 | `1` | `0` | Storage Manager V2 on LVM (QTS) | Supported |
-| `1` | `1` | ZFS (QuTS hero) | Supported on h5.x, and gets instant clones. **Refused** on h6.0 and later |
+| `1` | `1` | ZFS (QuTS hero) | Supported on h5.x, and gets instant clones. Disks only on h6.0 and later |
 
 `pvesm add` calls this before it writes anything, so a firmware that is too old
 fails immediately with a message naming its version, rather than producing a
 storage that adds cleanly and then lists nothing.
 
-QuTS hero h6.0 and later report Storage Manager V2 as well, and this plugin
-still does not work on them. That one is decided from the firmware version, and
-is refused at the same moment. See section 3.
+QuTS hero h6.0 and later report Storage Manager V2 as well, and take changes
+through a different interface, which the plugin uses there. That is decided
+from the firmware version. See section 3.
 
 To check before you install anything:
 
@@ -51,7 +51,7 @@ pve-qnap-api-probe --host <nas> --user admin --insecure
 | **QuTS hero** | **h5.1.x** | **Supported** | ZFS. Instant clones, so a Proxmox VE linked clone is instant |
 | QuTS hero | h5.2.x | Expected to work | Not verified |
 | QuTS hero | h4.5.x to h5.0.x | Expected to work | Not verified |
-| QuTS hero | h6.0 and later | **Not supported yet** | Measured on h6.0.1. Refused at `pvesm add`. See section 3 |
+| QuTS hero | h6.0 and later | **Partly supported** | Disks: create, delete, attach. Snapshots, rollback, clones not yet. See section 3 |
 | QuTScloud | any | **Not supported** | A cloud image with no local storage pools of this shape |
 | QNE Network OS | any | **Not supported** | A different product; it has no Storage Manager |
 | QTS on a TR-series expansion unit | any | n/a | An expansion unit is not a NAS |
@@ -62,27 +62,32 @@ combination.
 
 ---
 
-## 3. QuTS hero h6.0 and later: not supported yet
+## 3. QuTS hero h6.0 and later: disks now, snapshots not yet
 
-This is the one entry in the matrix that was measured rather than read. The
-plugin was run against a NAS on QuTS hero h6.0.1:
+On h6 the NAS takes the requests that create and change things through a
+different interface from earlier firmware. From 0.6.3 the plugin uses that
+interface on h6, for the operations whose requests have been seen to work on
+h6.0.1. Changing CHAP on an existing target is the exception: its result is read
+back from the NAS. Everything it reads is read the same way on every firmware.
 
-| | Result on h6.0.1 |
+| | On QuTS hero h6 |
 |---|---|
-| Logging in, and reading the model, the firmware and the two discriminators | Works |
-| `pve-qnap-api-probe`: the portal, the storage pool, the LUNs, the targets | Works |
-| Creating the storage's iSCSI target | **Refused by the NAS** |
-| Creating a LUN | **Refused by the NAS** |
+| Adding a storage, with CHAP | yes |
+| Creating, deleting, attaching and detaching a disk | yes |
+| Status, listing, migration between nodes | yes |
+| Full clone (Proxmox VE copies the data) | yes |
+| Snapshot, rollback | not yet |
+| Linked clone, clone from a snapshot, template | not yet |
+| Growing or renaming a disk | not yet |
+| Thick LUNs, a 4096-byte sector size | not yet |
 
-So a storage on h6 could be described and could hold nothing. From 0.6.1 the
-plugin refuses QuTS hero h6.0 and later when the storage is added, before it
-sends anything the NAS would refuse, and the message names the firmware.
+What is not available yet is refused before anything is sent to the NAS, with a
+message that says so. The plugin itself has not yet been run on an h6 NAS: see
+the QuTS hero h6 item in [TESTING.md](TESTING.md).
 
-**Do not upgrade a NAS that already holds this plugin's disks to QuTS hero
-h6.** After such an upgrade the storage still reports its capacity and still
-lists its disks, and no disk can be created or deleted. The plugin's refusals
-name the firmware when that happens. Whether guests that are already running
-keep their disks across the upgrade has not been measured.
+A NAS that already holds this plugin's disks and is upgraded to h6 keeps working
+for the operations above. Snapshots taken before the upgrade can no longer be
+rolled back from Proxmox VE.
 
 ---
 

@@ -14,7 +14,7 @@
 
 use strict;
 use warnings;
-use Test::More tests => 7;
+use Test::More tests => 10;
 
 # CGI programs under /cgi-bin.
 my @CGIS = qw(
@@ -160,6 +160,70 @@ is_deeply([ sort keys %seen_write ], [ sort @WRITES ],
 # 8 queries, get_return, and the 15 writes.
 is(3 + scalar(@QUERIES) + 1 + scalar(@WRITES), 27,
    'which is 27 calls in all');
+
+# ---------------------------------------------------------------------------
+# QuTS hero h6: the JSON interface
+# ---------------------------------------------------------------------------
+#
+# A SECOND, SEPARATE LIST, added for QuTS hero h6, where the writes above are
+# refused and the plugin writes through `/api` instead. Each of these was seen
+# to work on h6.0.1 except the last, the Default Policy row, whose result the
+# plugin reads back. The same rule applies: a request that is not here does not
+# get in by being added here.
+#
+# Ten requests: the volume list, one volume, creating and deleting a volume;
+# creating and deleting a target; attaching, enabling and detaching a LUN; and
+# the target's Default Policy row.
+my @REST_CALLS = (
+    'GET    api/storage/v1/volumes',
+    'POST   api/storage/v1/volumes',
+    'GET    api/storage/v1/volumes/{}',
+    'DELETE api/storage/v1/volumes/{}',
+    'POST   api/iscsi/v1/targets',
+    'DELETE api/iscsi/v1/targets/{}',
+    'POST   api/iscsi/v1/targets/{}/luns/{}',
+    'PUT    api/iscsi/v1/targets/{}/luns/{}',
+    'DELETE api/iscsi/v1/targets/{}/luns/{}',
+    'PUT    api/iscsi/v1/targets/{}/acls/{}',
+);
+
+my %rest_const;
+for my $text (values %src) {
+    while ($text =~ /\b(REST_[A-Z]+)\s*=>\s*'([^']+)'/g) { $rest_const{$1} = $2 }
+}
+# A path is written as a constant, optionally followed by a string with the
+# indexes in it, optionally followed by another constant.
+my $path_re = qr/(REST_[A-Z]+)(?:\s*\.\s*"([^"]*)")?/;
+my $norm = sub {
+    my ($c, $tail, $more) = @_;
+    my $p = ($rest_const{$c} // "?$c") . ($tail // '');
+    $p =~ s/\$\w+/{}/g;
+    $p .= '{}' if $more;
+    return $p;
+};
+
+my %seen_rest;
+for my $f (sort keys %src) {
+    my @subs = split /^(?=sub\s+\w+\s*\{)/m, $src{$f};
+    for my $body (@subs) {
+        # `my $path = REST_X . "..."` then `rest(..., $path, ...)`.
+        my %var;
+        while ($body =~ /my\s+\$(\w+)\s*=\s*$path_re\s*(\.\s*[A-Z_]+)?\s*;/g) {
+            $var{$1} = $norm->($2, $3, $4);
+        }
+        while ($body =~ /\brest(?:_ok)?\(\s*'(GET|POST|PUT|DELETE)',\s*(?:\$(\w+)|$path_re(\s*\.\s*[A-Z_]+)?)/g) {
+            my ($m, $v, $c, $tail, $more) = ($1, $2, $3, $4, $5);
+            my $p = defined $v ? ($var{$v} // "?\$$v") : $norm->($c, $tail, $more);
+            $seen_rest{ sprintf('%-6s %s', $m, $p) } = 1;
+        }
+    }
+}
+is_deeply([ sort keys %seen_rest ], [ sort @REST_CALLS ],
+   'h6: the JSON requests sent are exactly the listed ones')
+    or diag("in the source:\n  " . join("\n  ", sort keys %seen_rest));
+is(scalar(@REST_CALLS), 10, 'which is ten');
+unlike($src{'lib/PVE/Storage/Custom/QNAP/API.pm'}, qr/\bsid\b[^\n]*\?[^\n]*sid=|_rest_url\([^)]*sid/,
+       'and the session goes in a header, never in a JSON request URL');
 
 # Nothing here may be sent as a GET with a credential in it; `make
 # check-secrets` guards that. This only confirms the login is where it should

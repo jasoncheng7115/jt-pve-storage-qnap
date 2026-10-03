@@ -14,7 +14,7 @@ Depends: ${misc:Depends},
          multipath-tools,
          libwww-perl,
          liblwp-protocol-https-perl,
-         libxml-libxml-perl
+         libxml-libxml-perl, libjson-perl
 Recommends: sg3-utils, psmisc, lsscsi
 Description: QNAP NAS storage plugin for Proxmox VE
  A Proxmox VE custom storage plugin for QNAP QTS and QuTS hero over iSCSI, in
@@ -23,10 +23,11 @@ Description: QNAP NAS storage plugin for Proxmox VE
  shared LUN carved up locally.
  .
  Registers the storage type "qnapsan". It requires Storage Manager V2, which
- QTS 4.5.1 and QuTS hero h5.x provide; the plugin refuses a firmware that
- reports the legacy Storage Manager rather than failing later. QuTS hero h6.0
- and later are not supported yet and are refused the same way. Linked clones are
- made on QuTS hero only; on QTS a template is cloned with a full clone.
+ QTS 4.5.1 and QuTS hero provide; the plugin refuses a firmware that
+ reports the legacy Storage Manager rather than failing later. On QuTS hero
+ h6.0 and later it creates, deletes and attaches disks; snapshots, rollback and
+ clones are not available there yet. Linked clones are made on QuTS hero before
+ h6 only; on QTS a template is cloned with a full clone.
  .
  Every 0.x release is a prerelease. What has and has not been exercised
  against real hardware is listed in

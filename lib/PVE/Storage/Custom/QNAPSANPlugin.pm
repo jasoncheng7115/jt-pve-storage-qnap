@@ -467,11 +467,23 @@ sub _chap {
 # here found nothing, and the "username with no secret" guard then refused
 # every `pvesm add` that set CHAP: the configuration this plugin recommends.
 # Found by driving the hook against a fake NAS; no unit test reached it.
+# The address part of a portal: `host`, `host:port`, `[v6]` or `[v6]:port`.
+sub _portal_host {
+    my ($p) = @_;
+    return $1 if $p =~ /\A\[([^\]]+)\](?::\d+)?\z/;
+    return $1 if $p =~ /\A([^:]+):\d+\z/;
+    return $p;
+}
+
 sub _ensure_target {
     my ($class, $api, $storeid, $scfg, $volname, $creds) = @_;
     my $tgt = $class->_tgt($api);
+    # The addresses the target is to answer on, which only QuTS hero h6 is
+    # told. A data portal may carry a port; the target is bound to an address.
+    my @if = map { _portal_host($_) } @{ $class->_data_portals($scfg) };
     return $tgt->ensure(
-        name => $class->_target_name($storeid, $scfg, $volname),
+        name       => $class->_target_name($storeid, $scfg, $volname),
+        interfaces => \@if,
         $class->_chap($storeid, $scfg, $creds),
     );
 }
@@ -613,7 +625,7 @@ sub _remember_nas_kind {
     # it would turn a failed request into a decision.
     return undef if !defined $info->{storage_v2};
 
-    my $kind = $api->is_zfs ? 'zfs' : 'lvm';
+    my $kind = $api->is_zfs ? ($api->is_h6 ? 'zfs6' : 'zfs') : 'lvm';
     eval {
         mkdir $STATE_DIR;
         PVE::Tools::file_set_contents($class->_kind_file($storeid), "$kind\n");
@@ -621,13 +633,15 @@ sub _remember_nas_kind {
     return $kind;
 }
 
-sub _nas_is_zfs {
+# 'zfs' (QuTS hero before h6), 'zfs6' (QuTS hero h6 and later), 'lvm' (QTS),
+# or undef when it is not known.
+sub _nas_kind {
     my ($class, $storeid, $scfg) = @_;
 
     my $file = $class->_kind_file($storeid);
     my $read = sub {
         my $raw = eval { PVE::Tools::file_get_contents($file) } // '';
-        return $raw =~ /\A(zfs|lvm)\s*\z/ ? $1 : undef;
+        return $raw =~ /\A(zfs6|zfs|lvm)\s*\z/ ? $1 : undef;
     };
 
     my $kind;
@@ -648,6 +662,13 @@ sub _nas_is_zfs {
         $kind //= $read->();
     }
 
+    return $kind;
+}
+
+# QuTS hero BEFORE h6, where a clone is instant: 1 / 0 / undef.
+sub _nas_is_zfs {
+    my ($class, $storeid, $scfg) = @_;
+    my $kind = $class->_nas_kind($storeid, $scfg);
     return undef if !defined $kind;
     return $kind eq 'zfs' ? 1 : 0;
 }
@@ -2169,6 +2190,7 @@ sub _do_rollback {
 
     my $api = $class->_api($storeid, $scfg);
     my $lun = $class->_lun($api);
+    $lun->refuse_on_h6('a rollback');
     my $name = PVE::Storage::Custom::QNAP::Naming::lun_name($storeid, $volname);
     my $obj = $lun->get($name) or die "storage '$storeid': no LUN '$name'\n";
 
@@ -2322,6 +2344,9 @@ sub clone_image {
           . " 1). QuTS hero h5.x has instant clones.\n";
     }
 
+    eval { $class->_lun($api)->refuse_on_h6('a clone') };
+    if (my $err = $@) { eval { $api->logout }; die $err }
+
     # Not while a rollback is running: see `_fork_claim`.
     if (my $busy = $class->_fork_busy($storeid)) {
         eval { $api->logout };
@@ -2451,6 +2476,7 @@ sub create_base {
 
     my $api = $class->_api($storeid, $scfg);
     my $lun = $class->_lun($api);
+    $lun->refuse_on_h6('a template');
     my $old = PVE::Storage::Custom::QNAP::Naming::lun_name($storeid, $leaf);
     my $new = PVE::Storage::Custom::QNAP::Naming::lun_name($storeid, $newname);
 
@@ -2561,6 +2587,12 @@ sub volume_has_feature {
 
     # Offered only where it is known to be QuTS hero. Not known is not offered.
     return undef if $feature eq 'clone' && !$class->_nas_is_zfs($storeid, $scfg);
+
+    # QuTS hero h6: disks are created, deleted and attached there, and nothing
+    # else has been measured. A snapshot, a template and a rename are not
+    # offered, so PVE refuses them before it starts.
+    return undef if $feature =~ /\A(?:snapshot|template|rename)\z/
+        && ($class->_nas_kind($storeid, $scfg) // '') eq 'zfs6';
 
     return 1;
 }

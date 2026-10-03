@@ -2,7 +2,7 @@
 
 把資料放到這個 storage 之前，請先讀這一頁。
 
-**目前只在一台 QNAP NAS 上測過**。QuTS hero h6.0 以上尚未支援。0.x 系列的每一個版本都是預覽版，這一頁說明目前的實際狀況。相關專案（`jt-pve-storage-synology`、`-netapp`、`-purestorage`、`-dellemc`）是靠實際量測儲存設備、把實際行為記錄下來才穩定的，這個專案才剛開始這個過程。
+**目前只在一台 QNAP NAS 上測過**。在 QuTS hero h6.0 以上，可以建立、刪除與掛載磁碟，快照尚未支援。0.x 系列的每一個版本都是預覽版，這一頁說明目前的實際狀況。相關專案（`jt-pve-storage-synology`、`-netapp`、`-purestorage`、`-dellemc`）是靠實際量測儲存設備、把實際行為記錄下來才穩定的，這個專案才剛開始這個過程。
 
 ## 具體來說
 
@@ -28,9 +28,9 @@
 | `pvesm add` 時建立 storage 的 iSCSI target | **被 NAS 拒絕** |
 | 建立 LUN | **被 NAS 拒絕** |
 
-所以 QuTS hero h6.0 以上尚未支援，從 0.6.1 開始，新增 storage 時 plugin 會直接拒絕。見 [SUPPORTED-QNAP-OS_zh-TW.md](SUPPORTED-QNAP-OS_zh-TW.md)。
+在 h6 上，這兩項要透過另一套介面，plugin 從 0.6.3 開始在 h6 上改用那套介面。見 [SUPPORTED-QNAP-OS_zh-TW.md](SUPPORTED-QNAP-OS_zh-TW.md) 與下面的第 18 項。
 
-這次執行沒有解決下面任何一個項目。沒有建立任何 LUN，所以沒有看到裝置、WWID 或 vendor 字串，而且那個韌體不在這個 plugin 的支援範圍內。
+這次執行沒有解決下面任何一個項目。沒有建立任何 LUN，所以沒有看到裝置、WWID 或 vendor 字串。
 
 ---
 
@@ -52,7 +52,7 @@
 
 6. **倒回之後，LUN 的 NAA 會維持不變嗎**？plugin 會檢查，一旦改變就明確拒絕，因為那代表每個節點上的裝置識別都變了。相關專案的任何儲存設備上都還沒有發生過這種情況。
 
-7. **`authLogin.cgi` 是否接受 POST**？這個 plugin 的每一個呼叫都是 POST，憑證不會出現在 URL 裡。如果剛取得的工作階段在另一支 CGI 仍然不被承認，plugin 會判斷韌體沒有讀取 POST 內容，改用 GET 重送那一個呼叫，但只限不含密碼的呼叫。**登入絕不會用 GET 送出**，所以只讀取查詢字串的韌體完全無法使用。這是第一次上機最可能失敗的原因。在 QuTS hero h6.0.1 上，以 POST 送出的登入是被接受的。那個韌體尚未支援，所以對受支援的韌體來說，這個問題仍然沒有答案。
+7. **`authLogin.cgi` 是否接受 POST**？這個 plugin 的每一個呼叫都是 POST，憑證不會出現在 URL 裡。如果剛取得的工作階段在另一支 CGI 仍然不被承認，plugin 會判斷韌體沒有讀取 POST 內容，改用 GET 重送那一個呼叫，但只限不含密碼的呼叫。**登入絕不會用 GET 送出**，所以只讀取查詢字串的韌體完全無法使用。這是第一次上機最可能失敗的原因。在 QuTS hero h6.0.1 上，以 POST 送出的登入是被接受的。對這個 plugin 所針對的韌體來說，這個問題仍然沒有答案。
 
 8. **同時執行**。`get_return` 是以 CGI 名稱而不是以工作為依據，所以同時進行的複製與倒回無法區分。因此 plugin 在同一台 NAS 上一次只執行一個，範圍是整個叢集：第一個還在執行時，第二個會被拒絕。需要確認 NAS 上有沒有別的來源（排程快照、網頁介面）也使用同一個管道。`get_return` 的 `cginame` 應該送什麼也還沒有實測：plugin 送的是 `snapshot.cgi`，如果 QTS 要的是別的寫法，複製或倒回就永遠拿不到結果。
 
@@ -75,6 +75,10 @@
 16. **快照清單裡的 `create_time` 是 epoch 嗎**？只有在數值像是合理的 epoch 時，plugin 才會回報時間戳記，否則不回報。Proxmox VE 9 沒有任何地方會讀取這個值。
 
 17. **`bTargetClusterEnable` 能不能讀回來**？`targetInfo` 不會回傳它，所以 plugin 在建立 target 時寫入，並在每次 `pvesm set` 時重新套用，不會在啟用磁碟的過程中寫入。如果有第二個節點無法登入某個 target，請執行 `pvesm set <storeid>` 重新套用。
+
+### QuTS hero h6
+
+18. **plugin 在 h6 上的流程能不能從頭到尾運作**？在 h6 上，plugin 會透過 h6 用來處理變更的那套介面建立與刪除磁碟、建立 target，並把磁碟掛到 target 上。它送出的請求，除了修改既有 target 的 CHAP 那一個之外，都在 h6.0.1 上以手動方式確認過可以運作，但 plugin 本身還沒有實際送過。有四件事還沒量測，plugin 會逐一檢查，不會自行假設：LUN 列表是否用建立時的標籤稱呼新磁碟（不是的話會拒絕）；以這種方式建立的 target 在 target 列表裡叫什麼名稱（plugin 也會用 IQN 尋找）；建立時與之後 `pvesm set` 寫入的 CHAP 是否生效（會讀回確認，沒有生效就拒絕）；storage 有多個資料位址（`qnap-data-portals`）時 target 會在哪些位址上回應，這些位址是以逗號分隔一起送出的。確認方式：在一台 h6 的 NAS 上執行下面第一次上機的步驟到第 4 步，然後釋放磁碟並移除 storage。
 
 ---
 

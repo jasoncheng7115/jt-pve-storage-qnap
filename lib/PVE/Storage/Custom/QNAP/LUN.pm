@@ -39,6 +39,8 @@ package PVE::Storage::Custom::QNAP::LUN;
 use strict;
 use warnings;
 
+use JSON;
+
 use PVE::Storage::Custom::QNAP::API;
 use PVE::Storage::Custom::QNAP::Naming;
 
@@ -314,6 +316,103 @@ sub warn_if_near_lun_limit {
 # Creating
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# QuTS hero h6
+# ---------------------------------------------------------------------------
+#
+# What follows is the h6 path, and it is deliberately narrow.
+#
+# MEASURED on h6.0.1, and implemented: creating a LUN, deleting one, attaching
+# one to a target and detaching it. Each request here is one whose shape and
+# answer were seen on that firmware.
+#
+# NOT MEASURED, and therefore REFUSED rather than guessed at: growing a LUN,
+# renaming one, and everything to do with snapshots and clones. A request sent
+# in a shape nobody has seen the NAS accept is how a disk ends up half-changed.
+use constant {
+    REST_VOLUMES => 'api/storage/v1/volumes',
+    REST_TARGETS => 'api/iscsi/v1/targets',
+
+    # How long a new volume is waited for before its LUN shows.
+    H6_CREATE_WAIT => 300,
+};
+
+sub refuse_on_h6 {
+    my ($self, $what) = @_;
+    return if !$self->api->is_h6;
+    die "storage '" . $self->_storeid . "': $what is not available on QuTS hero"
+      . " h6 with this plugin yet. On h6 it creates, deletes, attaches and"
+      . " detaches disks.\n";
+}
+
+# The storage volume behind a LUN. On h6 a LUN is deleted by deleting its
+# volume, and the volume has an id of its own that is not the LUN's index.
+sub _h6_volume_id {
+    my ($self, $index) = @_;
+
+    my $r = $self->api->rest_ok('GET', REST_VOLUMES, undef,
+        _what => "listing the NAS's volumes");
+    my $all = $r->{collection};
+    die "storage '" . $self->_storeid . "': the NAS answered the volume listing"
+      . " without a list. Refusing to read that as a NAS with no volumes.\n"
+        if ref $all ne 'ARRAY';
+
+    my @hit = grep {
+        ref $_ eq 'HASH' && defined $_->{lun_index}
+            && "$_->{lun_index}" eq "$index" && defined $_->{volume_id}
+    } @$all;
+    return undef if !@hit;
+    die "storage '" . $self->_storeid . "': " . scalar(@hit) . " volumes on the"
+      . " NAS claim LUN $index. Refusing to pick one.\n" if @hit > 1;
+    return $hit[0]{volume_id};
+}
+
+sub _create_h6 {
+    my ($self, $name, $gib, $pool, %opt) = @_;
+    my $sid = $self->_storeid;
+
+    die "storage '$sid': a thick LUN cannot be created on QuTS hero h6 with"
+      . " this plugin yet. Leave qnap-thin at its default.\n"
+        if !(($opt{thin} // 1) ? 1 : 0);
+    die "storage '$sid': a sector size other than 512 cannot be set on QuTS"
+      . " hero h6 with this plugin yet. Leave qnap-sector-size at its"
+      . " default.\n" if ($opt{sector_size} // 512) != 512;
+
+    # Bytes here, where the CGI took whole GiB. The size is still a whole
+    # number of GiB, so that a disk is the same size on either firmware.
+    my $r = $self->api->rest_ok('POST', REST_VOLUMES, {
+        capacity       => $gib * GIB,
+        pool_id        => $pool + 0,
+        label          => $name,
+        provision_type => 'thin',
+        type           => 'zvol',
+        threshold      => ($opt{threshold} // 80) + 0,
+        iscsi          => { create_lun => JSON::true },
+    }, _what => "creating LUN '$name' ($gib GiB) in pool $pool");
+
+    my $vol = ref $r->{single} eq 'HASH' ? $r->{single}{volume_id} : undef;
+    die "storage '$sid': the NAS reported creating '$name' but named no volume"
+      . " for it. Do not retry blindly: check Storage & Snapshots first.\n"
+        if !defined $vol || $vol !~ /\A\d+\z/;
+
+    # The LUN comes into being after the volume does, so its index is asked
+    # for until it is there.
+    my ($index, $t0) = (undef, time);
+    while (time - $t0 < H6_CREATE_WAIT) {
+        my $v = $self->api->rest('GET', REST_VOLUMES . "/$vol");
+        my $li = (!$v->{transport} && ref $v->{single} eq 'HASH')
+            ? $v->{single}{lun_index} : undef;
+        if (defined $li && $li =~ /\A\d+\z/) { $index = $li; last }
+        select(undef, undef, undef, 1);
+    }
+    die "storage '$sid': the NAS created volume $vol for '$name' but no LUN"
+      . " appeared on it within " . H6_CREATE_WAIT . "s. It has NOT been"
+      . " removed: check Storage & Snapshots before retrying.\n"
+        if !defined $index;
+
+    return $index;
+}
+
 sub create {
     my ($self, %opt) = @_;
 
@@ -370,12 +469,24 @@ sub create {
     # nothing that has to be explained.
     $p{lv_threshold} = $opt{threshold} // 80 if $p{LUNThinAllocate};
 
-    my $index = $self->api->call_id(CGI_LUN, %p,
-        _what => "creating LUN '$name' ($gib GiB) in pool $pool");
+    my $h6 = $self->api->is_h6;
+    my $index = $h6
+        ? $self->_create_h6($name, $gib, $pool, %opt)
+        : $self->api->call_id(CGI_LUN, %p,
+            _what => "creating LUN '$name' ($gib GiB) in pool $pool");
 
     # `add_lun` answers as soon as the LUN has an index; the NAS may still be
     # laying it out.
     my $lun = $self->wait_ready($index, what => 'creating the LUN');
+
+    # h6 was given a LABEL, and everything else in this plugin finds a LUN by
+    # its NAME. If the NAS called the LUN something else, the disk would be
+    # created and then never found again.
+    die "storage '" . $self->_storeid . "': the NAS created LUN $index for"
+      . " '$name' but calls it '" . ($lun->{name} // '?') . "'. This plugin"
+      . " finds a disk by that name, so it would not find this one again."
+      . " Remove LUN $index on the NAS.\n"
+        if $h6 && defined $lun && ($lun->{name} // '') ne $name;
 
     die "storage '" . $self->_storeid . "': QTS reported creating LUN '$name'"
       . " as index $index, but it cannot be read back. Do not retry blindly:"
@@ -439,6 +550,7 @@ sub _edit {
 
 sub resize {
     my ($self, $lun, $new_bytes) = @_;
+    $self->refuse_on_h6('growing a disk');
 
     my $want_gib = bytes_to_gib_up($new_bytes);
     my $have     = $lun->{size};
@@ -479,6 +591,7 @@ sub resize {
 
 sub rename {
     my ($self, $lun, $new_name) = @_;
+    $self->refuse_on_h6('renaming a disk');
     PVE::Storage::Custom::QNAP::Naming::assert_qts_legal($new_name);
 
     # `LUNPath` for a block-based LUN is the LUN name — `add_lun` sends it that
@@ -509,6 +622,8 @@ sub rename {
 sub delete {
     my ($self, $index) = @_;
 
+    return $self->_delete_h6($index) if $self->api->is_h6;
+
     my $r = $self->api->call(CGI_LUN, func => 'remove_lun', LUNIndex => $index);
     die "storage '" . $self->_storeid . "': could not delete LUN $index:"
       . " $r->{transport}\n" if $r->{transport};
@@ -526,8 +641,31 @@ sub delete {
         if defined $result && $result =~ /\A\d+\z/ && $result == 0;
 
     die "storage '" . $self->_storeid . "': could not delete LUN $index: "
-      . PVE::Storage::Custom::QNAP::API::error_text($result) . "."
-      . $self->api->firmware_note . "\n";
+      . PVE::Storage::Custom::QNAP::API::error_text($result) . ".\n";
+}
+
+# h6: the LUN goes when its volume does. Absence is confirmed by the same
+# listing as on any other firmware, for the same reason.
+sub _delete_h6 {
+    my ($self, $index) = @_;
+
+    my $vol = $self->_h6_volume_id($index);
+    if (!defined $vol) {
+        return 1 if !defined $self->get_by_index($index);
+        die "storage '" . $self->_storeid . "': LUN $index is on the NAS but no"
+          . " volume claims it, so there is nothing this plugin knows how to"
+          . " delete. Remove it in Storage & Snapshots.\n";
+    }
+
+    my $r = $self->api->rest('DELETE', REST_VOLUMES . "/$vol");
+    return 1 if !defined $self->get_by_index($index);
+
+    die "storage '" . $self->_storeid . "': the NAS reported deleting LUN"
+      . " $index but it is still there\n"
+        if !$r->{transport} && defined $r->{error_code} && $r->{error_code} == 0;
+
+    die "storage '" . $self->_storeid . "': could not delete LUN $index: "
+      . PVE::Storage::Custom::QNAP::API::rest_error_text($r) . ".\n";
 }
 
 # ---------------------------------------------------------------------------
@@ -540,6 +678,18 @@ sub delete {
 
 sub map_to_target {
     my ($self, $index, $target_index) = @_;
+
+    # h6: two steps. Attached first, then enabled; enabling a LUN that is not
+    # attached is refused.
+    if ($self->api->is_h6) {
+        my $path = REST_TARGETS . "/$target_index/luns/$index";
+        $self->api->rest_ok('POST', $path, undef,
+            _what => "mapping LUN $index to target $target_index");
+        $self->api->rest_ok('PUT', $path, { lun_enable => JSON::true },
+            _what => "enabling LUN $index on target $target_index");
+        return 1;
+    }
+
     # `add_lun` on the TARGET cgi answers with the target index, not 0.
     $self->api->call_id(CGI_TARGET,
         func => 'add_lun', LUNIndex => $index, targetIndex => $target_index,
@@ -549,9 +699,15 @@ sub map_to_target {
 
 sub unmap_from_target {
     my ($self, $index, $target_index) = @_;
-    my $r = $self->api->call(CGI_TARGET,
-        func => 'remove_lun', LUNIndex => $index, targetIndex => $target_index);
-    return 1 if !$r->{transport}
+
+    my $h6 = $self->api->is_h6;
+    my $r = $h6
+        ? $self->api->rest('DELETE', REST_TARGETS . "/$target_index/luns/$index")
+        : $self->api->call(CGI_TARGET,
+            func => 'remove_lun', LUNIndex => $index, targetIndex => $target_index);
+    return 1 if $h6 && !$r->{transport}
+             && defined $r->{error_code} && $r->{error_code} == 0;
+    return 1 if !$h6 && !$r->{transport}
              && defined $r->{result} && $r->{result} =~ /\A\d+\z/
              && $r->{result} == 0;
 
@@ -563,12 +719,23 @@ sub unmap_from_target {
 
     die "storage '" . $self->_storeid . "': could not unmap LUN $index from"
       . " target $target_index: "
-      . ($r->{transport}
-         // PVE::Storage::Custom::QNAP::API::error_text($r->{result})) . "\n";
+      . ($h6 ? PVE::Storage::Custom::QNAP::API::rest_error_text($r)
+             : ($r->{transport}
+                // PVE::Storage::Custom::QNAP::API::error_text($r->{result})))
+      . "\n";
 }
 
 sub set_enabled_on_target {
     my ($self, $index, $target_index, $on) = @_;
+
+    if ($self->api->is_h6) {
+        $self->api->rest_ok('PUT', REST_TARGETS . "/$target_index/luns/$index",
+            { lun_enable => ($on ? JSON::true : JSON::false) },
+            _what => ($on ? "enabling" : "disabling")
+                   . " LUN $index on target $target_index");
+        return 1;
+    }
+
     $self->api->call_ok(CGI_TARGET,
         func => 'edit_lun', LUNIndex => $index, targetIndex => $target_index,
         LUNEnable => ($on ? 1 : 0),
@@ -607,6 +774,10 @@ sub is_mapped_to {
 sub snapshot_list {
     my ($self, $index, %opt) = @_;
 
+    # h6: this plugin takes no snapshots there, so there are none of its own to
+    # list, and the listing call has not been measured on that firmware.
+    return [] if $self->api->is_h6;
+
     my $r = $self->api->call(CGI_SNAP,
         func => 'extra_get', snapshot_list => 1, LUNIndex => $index);
 
@@ -644,6 +815,7 @@ sub snapshot_list_all {
 
 sub snapshot_create {
     my ($self, %opt) = @_;
+    $self->refuse_on_h6('a snapshot');
 
     my $index = $opt{lun_index};
     my $name  = $opt{name};
@@ -695,6 +867,7 @@ sub snapshot_create {
 
 sub snapshot_delete {
     my ($self, $snapshot_id) = @_;
+    $self->refuse_on_h6('deleting a snapshot');
 
     my $r = $self->api->call(CGI_SNAP,
         func => 'del_snapshot', snapshotID => $snapshot_id);
@@ -722,6 +895,7 @@ sub snapshot_delete {
 # result is collected through a channel keyed by CGI name — see API::wait_for_fork.
 sub snapshot_rollback {
     my ($self, %opt) = @_;
+    $self->refuse_on_h6('a rollback');
 
     my $index = $opt{lun_index};
     my $snapshot_id = $opt{snapshot_id};
@@ -796,6 +970,7 @@ sub snapshot_rollback {
 # THE CALLER MUST HOLD THE CLUSTER STORAGE LOCK — see snapshot_rollback.
 sub clone_from_snapshot {
     my ($self, %opt) = @_;
+    $self->refuse_on_h6('a clone');
 
     my $name = $opt{name};
     PVE::Storage::Custom::QNAP::Naming::assert_qts_legal($name);

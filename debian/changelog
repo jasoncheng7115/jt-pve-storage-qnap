@@ -1,3 +1,16 @@
+jt-pve-storage-qnap (0.6.3-1) unstable; urgency=medium
+
+  * Added: QuTS hero h6.0 and later. Adding a storage with CHAP, and creating,
+    deleting, attaching and detaching disks, now work on h6 through the
+    interface h6 takes changes through. Snapshots, rollback, clones,
+    templates, growing or renaming a disk, thick LUNs and a 4096-byte sector
+    size are not available on h6 yet and are refused before anything is sent.
+  * Changed: pvesm add no longer refuses QuTS hero h6.0 and later.
+  * Changed: depends on libjson-perl.
+  * 29 unit tests added, 276 in total.
+
+ -- Jason Cheng (Jason Tools) <jason@jason.tools>  Sat, 03 Oct 2026 11:49:38 +0800
+
 jt-pve-storage-qnap (0.6.2-1) unstable; urgency=medium
 
   * Fixed: a rollback on QTS was cut off after 60 seconds. It ran under the

@@ -7,9 +7,10 @@
 
 use strict;
 use warnings;
-use Test::More tests => 27;
+use Test::More tests => 47;
 
 use PVE::Storage::Custom::QNAP::LUN;
+use JSON;
 my $L = 'PVE::Storage::Custom::QNAP::LUN';
 my $GIB = 1024 * 1024 * 1024;
 
@@ -122,3 +123,131 @@ is(PVE::Storage::Custom::QNAP::LUN::lun_number_on_target($mapped, 7), undef,
    'a target the LUN is not on has no number');
 ok(PVE::Storage::Custom::QNAP::LUN::is_mapped_to($mapped, 0), 'mapped to 0');
 ok(!PVE::Storage::Custom::QNAP::LUN::is_mapped_to($mapped, 7), 'not to 7');
+
+# ---------------------------------------------------------------------------
+# QuTS hero h6: the writes go through the JSON interface, the reads do not
+# ---------------------------------------------------------------------------
+#
+# Each request is checked for its shape, because the shape is the part that was
+# measured on h6.0.1. And no CGI write may be sent on h6 at all: there the LUN
+# CGI refuses everything.
+{
+    package FakeH6Api;
+    sub new { my ($c, %o) = @_; return bless { rest => [], cgi => [], answers => [], %o }, $c }
+    sub is_h6 { return $_[0]{h6} // 1 }
+    sub storeid { return 's' }
+    sub limits { return {} }
+    sub rest {
+        my ($self, $m, $path, $body) = @_;
+        push @{ $self->{rest} }, [ $m, $path, $body ];
+        my $a = shift @{ $self->{answers} };
+        return $a // { error_code => 0 };
+    }
+    sub rest_ok {
+        my ($self, $m, $path, $body, %o) = @_;
+        my $r = $self->rest($m, $path, $body);
+        die "$o{_what} failed: " . PVE::Storage::Custom::QNAP::API::rest_error_text($r) . ".\n"
+            if ($r->{error_code} // -1) != 0;
+        return $r;
+    }
+    sub call    { push @{ $_[0]{cgi} }, $_[1]; return { result => 0 } }
+    sub call_id { push @{ $_[0]{cgi} }, $_[1]; return 0 }
+    sub call_ok { push @{ $_[0]{cgi} }, $_[1]; return { result => 0 } }
+}
+{
+    no warnings 'redefine';
+    my $api = FakeH6Api->new(answers => [
+        { error_code => 0, single => { volume_id => 19 } },          # POST volumes
+        { error_code => 0, single => { volume_id => 19 } },          # GET: no LUN yet
+        { error_code => 0, single => { volume_id => 19, lun_index => 9 } },
+    ]);
+    my $lun = $L->new($api);
+    local *PVE::Storage::Custom::QNAP::LUN::list = sub { [] };
+    local *PVE::Storage::Custom::QNAP::LUN::wait_ready = sub {
+        return { index => $_[1], name => 'pve-s-vm-100-disk-0', naa => '60123456789abcdef0123456789abcde' };
+    };
+    local *PVE::Storage::Custom::QNAP::LUN::assert_room_for_lun = sub { 1 };
+
+    my $got = $lun->create(name => 'pve-s-vm-100-disk-0', size => $GIB + 1, pool_id => '1');
+    my ($m, $path, $body) = @{ $api->{rest}[0] };
+    is("$m $path", 'POST api/storage/v1/volumes', 'h6: a LUN is created as a volume');
+    is($body->{capacity}, 2 * $GIB, 'in BYTES, still a whole number of GiB, rounded up');
+    ok($body->{pool_id} == 1 && !ref $body->{pool_id} && $body->{pool_id} !~ /\D/,
+       'the pool id is sent as a number');
+    is_deeply([ @$body{qw(label provision_type type threshold)} ],
+              [ 'pve-s-vm-100-disk-0', 'thin', 'zvol', 80 ],
+              'with its label, thin, a zvol, and the usual threshold');
+    ok(JSON::is_bool($body->{iscsi}{create_lun}) && $body->{iscsi}{create_lun},
+       'and asks for its LUN as a JSON true, not a string');
+    is(scalar(grep { $_->[1] eq 'api/storage/v1/volumes/19' } @{ $api->{rest} }), 2,
+       'the volume is asked about until its LUN is there');
+    is($got->{index}, 9, 'and the LUN it reports is the one handed back');
+    is(scalar @{ $api->{cgi} }, 0, 'no CGI write was sent');
+
+    # Created, but under another name: it would never be found again.
+    $api = FakeH6Api->new(answers => [
+        { error_code => 0, single => { volume_id => 20 } },
+        { error_code => 0, single => { volume_id => 20, lun_index => 10 } },
+    ]);
+    local *PVE::Storage::Custom::QNAP::LUN::wait_ready = sub {
+        return { index => $_[1], name => 'something-else', naa => '60123456789abcdef0123456789abcde' };
+    };
+    eval { $L->new($api)->create(name => 'pve-s-vm-100-disk-1', size => $GIB, pool_id => 1) };
+    like($@, qr/created LUN 10 for 'pve-s-vm-100-disk-1' but calls it 'something-else'/,
+         'a LUN the NAS named differently is refused, by index, so it can be removed');
+
+    $api = FakeH6Api->new;
+    eval { $L->new($api)->create(name => 'pve-s-vm-1-disk-0', size => $GIB, pool_id => 1, thin => 0) };
+    like($@, qr/a thick LUN cannot be created on QuTS hero h6/, 'h6: a thick LUN is refused');
+    eval { $L->new($api)->create(name => 'pve-s-vm-1-disk-0', size => $GIB, pool_id => 1, sector_size => 4096) };
+    like($@, qr/sector size other than 512/, 'and so is a 4096-byte sector size');
+    is(scalar @{ $api->{rest} }, 0, 'both before anything is sent');
+
+    # Delete: the volume behind the LUN, found by its lun_index.
+    my @present = (1);
+    local *PVE::Storage::Custom::QNAP::LUN::get_by_index = sub { return shift @present ? { index => $_[1] } : undef };
+    $api = FakeH6Api->new(answers => [
+        { error_code => 0, collection => [ { volume_id => 3, lun_index => 2 }, { volume_id => 19, lun_index => 9 } ] },
+        { error_code => 0 },
+    ]);
+    @present = ();
+    ok($L->new($api)->delete(9), 'h6: a LUN is deleted');
+    is(join(' | ', map { "$_->[0] $_->[1]" } @{ $api->{rest} }),
+       'GET api/storage/v1/volumes | DELETE api/storage/v1/volumes/19',
+       'by deleting the volume that claims it');
+
+    $api = FakeH6Api->new(answers => [
+        { error_code => 0, collection => [ { volume_id => 3, lun_index => 9 }, { volume_id => 19, lun_index => 9 } ] },
+    ]);
+    eval { $L->new($api)->delete(9) };
+    like($@, qr/2 volumes on the NAS claim LUN 9\. Refusing to pick one/,
+         'and two volumes claiming one LUN is refused, not guessed at');
+
+    # Attach: two steps, in this order.
+    $api = FakeH6Api->new;
+    $L->new($api)->map_to_target(9, 4);
+    is(join(' | ', map { "$_->[0] $_->[1]" } @{ $api->{rest} }),
+       'POST api/iscsi/v1/targets/4/luns/9 | PUT api/iscsi/v1/targets/4/luns/9',
+       'h6: a LUN is attached, then enabled');
+    ok(JSON::is_bool($api->{rest}[1][2]{lun_enable}) && $api->{rest}[1][2]{lun_enable},
+       'enabled with a JSON true');
+
+    $api = FakeH6Api->new;
+    $L->new($api)->unmap_from_target(9, 4);
+    is("$api->{rest}[0][0] $api->{rest}[0][1]", 'DELETE api/iscsi/v1/targets/4/luns/9',
+       'and detached with one request');
+
+    # What has not been measured is refused, before anything is sent.
+    $api = FakeH6Api->new;
+    my $l = $L->new($api);
+    my @refused = grep { !eval { $_->(); 1 } && $@ =~ /not available on QuTS hero h6/ } (
+        sub { $l->resize({ index => 9 }, 2 * $GIB) },
+        sub { $l->rename({ index => 9 }, 'x') },
+        sub { $l->snapshot_create(lun_index => 9, name => 'x') },
+        sub { $l->snapshot_rollback(lun_index => 9, snapshot_id => 1) },
+        sub { $l->clone_from_snapshot(snapshot_id => 1, name => 'x') },
+    );
+    is(scalar @refused, 5, 'h6: growing, renaming, snapshots, rollback and clones are refused');
+    ok(!@{ $api->{rest} } && !@{ $api->{cgi} } && !@{ $l->snapshot_list(9) },
+       'without a request, and the plugin lists no snapshots of its own there');
+}

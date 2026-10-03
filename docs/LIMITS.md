@@ -35,8 +35,8 @@ system:
 | QTS 5.2 | **128** | 250 TB |
 | QuTS hero h6.0 | **256** | 1024 TB |
 
-The QuTS hero line is the one the product pages give for h6.0. **QuTS hero h6.0 and
-later are not supported yet**, see
+The QuTS hero line is the one the product pages give for h6.0. On QuTS hero h6.0 and
+later this plugin creates, deletes and attaches disks, see
 [SUPPORTED-QNAP-OS.md](SUPPORTED-QNAP-OS.md). The user guide's figure for QuTS
 hero h5.1.x is under the user guides, below.
 

@@ -7,6 +7,34 @@ The register of what has been verified against real hardware, and what has not,
 is [docs/TESTING.md](docs/TESTING.md). It is more useful than this file for
 deciding whether to trust a given release.
 
+## [0.6.3] - 2026-10-03
+
+### Added
+
+- **QuTS hero h6.0 and later: disks.** Adding a storage (with CHAP), and
+  creating, deleting, attaching and detaching disks now work on h6, through the
+  interface h6 takes changes through. Every request the plugin sends there was
+  seen to work on h6.0.1, except the one that changes CHAP on an existing
+  target at `pvesm set`, whose result the plugin reads back. The plugin's own
+  use of them has not yet been run on an h6 NAS: see item 18 in [docs/TESTING.md](docs/TESTING.md).
+  Snapshots, rollback, clones, templates, growing or renaming a disk, thick LUNs
+  and a 4096-byte sector size are not available on h6 yet, and are refused
+  before anything is sent. Reads work the same way on every firmware.
+
+### Changed
+
+- 0.6.1 refused QuTS hero h6.0 and later at `pvesm add`. It no longer does: it
+  says what is and is not available there instead, and so does
+  `pve-qnap-api-probe`.
+- A NAS upgraded to h6 under an existing storage keeps working for the
+  operations above. Snapshots taken before the upgrade can no longer be rolled
+  back from Proxmox VE.
+- The package now depends on `libjson-perl`, which every Proxmox VE node already
+  has.
+- The documents say the plugin has been tested on one QNAP NAS so far.
+- 29 unit tests added, 276 in total. The simulated NAS now speaks h6's interface
+  and refuses every older-style write on h6, as the real one does.
+
 ## [0.6.2] - 2026-10-02
 
 ### Fixed

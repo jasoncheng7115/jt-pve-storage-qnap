@@ -44,7 +44,9 @@ use PVE::Storage::Custom::QNAP::Naming;
 use MIME::Base64 qw(encode_base64);
 use LWP::UserAgent;
 use HTTP::Request::Common qw(POST GET);
+use HTTP::Request;
 use XML::LibXML;
+use JSON;
 use Time::HiRes qw(time);
 
 use constant {
@@ -719,8 +721,7 @@ sub call_ok {
       . " <result>, so whether it happened is unknown. Check the NAS before"
       . " retrying.\n" if !defined $result;
 
-    die "storage '$self->{storeid}': $what failed: " . error_text($result) . "."
-      . $self->firmware_note . "\n"
+    die "storage '$self->{storeid}': $what failed: " . error_text($result) . ".\n"
         if $result !~ /\A-?\d+\z/ || $result != 0;
 
     return $r;
@@ -741,8 +742,7 @@ sub call_id {
       . " <result>, so whether it happened is unknown. Check the NAS before"
       . " retrying.\n" if !defined $result || $result !~ /\A-?\d+\z/;
 
-    die "storage '$self->{storeid}': $what failed: " . error_text($result) . "."
-      . $self->firmware_note . "\n"
+    die "storage '$self->{storeid}': $what failed: " . error_text($result) . ".\n"
         if $result < 0;
 
     return $result + 0;
@@ -863,42 +863,132 @@ sub is_storage_v2 {
     return (($i->{storage_v2} // '') eq '1') ? 1 : 0;
 }
 
-# Firmware this plugin is KNOWN not to work on, as a string naming it, or undef.
+# QuTS HERO h6.0 AND LATER, which is a different NAS to WRITE to.
 #
-# Measured, not inferred: on QuTS hero h6.0.1 the NAS refuses the calls this
-# plugin uses to create a target and to create a LUN, while the listings still
-# answer. So a storage on such a NAS looks healthy and can do nothing, and the
-# refusals it gets carry a number and no reason. This is what turns that into a
-# sentence.
+# Measured on h6.0.1: everything this plugin READS still answers through the
+# same CGIs, with the same fields. The calls that CREATE and CHANGE things do
+# not: the LUN CGI refuses every func and `add_target` refuses the parameters it
+# is sent. On that firmware the writes go to a JSON interface under `/api`
+# instead, which is what `rest` below speaks.
+#
+# So there is one question, asked once per object: is this h6? Reads never ask.
 #
 # The version arrives as `h6.0.1` or as `6.0.1`; both are read. Only QuTS hero
-# is judged: nothing has been measured on a QTS with the same major number, and
-# refusing on a guess would lock out firmware that works. A version that cannot
-# be read is not refused either.
-use constant UNSUPPORTED_HERO_MAJOR => 6;
+# is judged: nothing has been measured on a QTS with the same major number. A
+# version that cannot be read is not h6.
+use constant HERO_REST_MAJOR => 6;
 
-sub unsupported_firmware {
+sub is_h6 {
     my ($self) = @_;
-    return undef if !$self->is_zfs;
+    return 0 if !$self->is_zfs;
 
     my $fw = $self->sysinfo->{firmware};
-    return undef if !defined $fw || $fw !~ /\Ah?(\d+)\./i;
-    return undef if $1 < UNSUPPORTED_HERO_MAJOR;
-
-    (my $shown = $fw) =~ s/\Ah?/h/i;
-    return "QuTS hero $shown";
+    return 0 if !defined $fw || $fw !~ /\Ah?(\d+)\./i;
+    return $1 >= HERO_REST_MAJOR ? 1 : 0;
 }
 
-# What to add to the report of a call the NAS refused, when the firmware is one
-# this plugin does not work on. A NAS that was upgraded under a storage that
-# already exists is the case this is for: nothing checks the firmware again
-# until something fails, and then the failure should say why.
-sub firmware_note {
-    my ($self) = @_;
-    my $fw = eval { $self->unsupported_firmware };
-    return '' if !defined $fw;
-    return " This NAS runs $fw, and this plugin does not work on QuTS hero"
-         . " h6.0 or later.";
+# ---------------------------------------------------------------------------
+# The JSON interface of QuTS hero h6
+# ---------------------------------------------------------------------------
+
+# ONE REQUEST. The session is the one `authLogin.cgi` issued, and it travels in
+# a `sid` HEADER, never in the URL and never in the body.
+#
+# Every answer is an object carrying `error_code` (0 is success) and
+# `error_message`, and its payload under `single` (one object) or `collection`
+# (a list). The return value keeps those apart from a failure to get an answer
+# at all, which is `transport`, exactly as `call` does.
+sub _rest_url {
+    my ($self, $path) = @_;
+    my $portal = $self->_portal;
+    my ($host, $port) = ($portal, $self->{port});
+    if ($portal =~ /\A(.+):(\d+)\z/ && $1 !~ /:\z/) {
+        ($host, $port) = ($1, $2);
+    }
+    $path =~ s{\A/+}{};
+    return $self->{scheme} . "://$host:$port/$path";
+}
+
+sub _rest_http {
+    my ($self, $method, $path, $body) = @_;
+
+    my $req = HTTP::Request->new($method => $self->_rest_url($path));
+    $req->header(sid => $self->{sid}) if defined $self->{sid};
+    $req->header(Accept => 'application/json');
+    if (defined $body) {
+        $req->header('Content-Type' => 'application/json');
+        $req->content(JSON->new->utf8->canonical->encode($body));
+    }
+
+    my $res = eval { $self->_ua->request($req) };
+    if (!$res) {
+        my $err = $@ || 'request failed';
+        chomp $err;
+        return { transport => $err };
+    }
+
+    my $text = $res->decoded_content(charset => 'none');
+    my $json = (defined $text && length $text)
+        ? eval { JSON->new->utf8->decode($text) } : undef;
+
+    # A refusal arrives as JSON with a non-2xx status as often as with 200, so
+    # the body is read first and the status line is the fallback.
+    if (ref $json ne 'HASH') {
+        return { transport => $res->status_line, http => $res->code }
+            if !$res->is_success;
+        my $snip = $text // '';
+        $snip =~ s/\s+/ /g;
+        $snip = length($snip) > 160 ? substr($snip, 0, 160) . '...' : $snip;
+        return { transport => "the answer is not a JSON object: $snip",
+                 http => $res->code };
+    }
+
+    return {
+        http          => $res->code,
+        error_code    => $json->{error_code},
+        error_message => $json->{error_message},
+        single        => $json->{single},
+        collection    => $json->{collection},
+    };
+}
+
+sub rest {
+    my ($self, $method, $path, $body) = @_;
+
+    $self->login;
+    my $r = $self->_rest_http($method, $path, $body);
+
+    # A session the NAS no longer knows. One fresh login, one more attempt.
+    if (($r->{http} // 0) == 401) {
+        $self->logout;
+        $self->login;
+        $r = $self->_rest_http($method, $path, $body);
+    }
+    return $r;
+}
+
+# What a refusal says, in the NAS's own words: these codes are not this
+# plugin's to describe, and the message that comes with one is the diagnosis.
+sub rest_error_text {
+    my ($r) = @_;
+    return $r->{transport} if $r->{transport};
+    my $code = $r->{error_code};
+    return 'the NAS answered without an error_code' if !defined $code;
+    my $msg = $r->{error_message};
+    return "error_code $code"
+         . (defined $msg && length $msg ? " ($msg)" : '');
+}
+
+# Succeed, or die with something an operator can act on. Returns the answer.
+sub rest_ok {
+    my ($self, $method, $path, $body, %opt) = @_;
+    my $what = $opt{_what} // "$method $path";
+
+    my $r = $self->rest($method, $path, $body);
+    die "storage '$self->{storeid}': $what failed: " . rest_error_text($r) . ".\n"
+        if $r->{transport} || !defined $r->{error_code}
+        || $r->{error_code} !~ /\A-?\d+\z/ || $r->{error_code} != 0;
+    return $r;
 }
 
 # The iSCSI portal's own description, which carries THIS NAS's ceilings.

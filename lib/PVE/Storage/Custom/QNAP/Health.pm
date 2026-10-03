@@ -246,16 +246,6 @@ sub assert_usable {
       . " implements the V2 API only. QTS 4.5.1 or later, or QuTS hero h5.x,"
       . " provides V2.\n" if !$api->is_storage_v2;
 
-    # QuTS hero h6.0 and later. Refused for the same reason and at the same
-    # moment: measured on h6.0.1, the storage could be described but neither a
-    # target nor a LUN could be created, so adding it would leave a storage that
-    # reports its capacity and can hold nothing.
-    my $unsupported = $api->unsupported_firmware;
-    die "storage '$storeid': $model is running $unsupported. This plugin does"
-      . " not work on QuTS hero h6.0 or later: measured on h6.0.1, the NAS"
-      . " refuses the calls this plugin uses to create targets and LUNs. Use"
-      . " QuTS hero h5.x or QTS.\n" if defined $unsupported;
-
     # The iSCSI service being off is the single most likely reason a correctly
     # configured storage does nothing at all, and QTS ships it off.
     my $portal = $api->portal_info;
@@ -302,6 +292,14 @@ sub assert_usable {
        . " has no way to check that in advance."
        . " Take one snapshot of a test disk before you rely on"
        . " it.\n" if !$opt{quiet};
+
+    # QuTS hero h6: said once, when the storage is added. Disks are created,
+    # deleted and attached there; the rest is refused until it is measured.
+    warn "storage '$storeid': $model runs QuTS hero " . ($info->{firmware} // '?')
+       . ". On QuTS hero h6 this plugin creates, deletes, attaches and detaches"
+       . " disks. Snapshots, rollback, clones, templates and growing a disk are"
+       . " not available there yet.\n"
+        if !$opt{quiet} && $api->is_h6;
 
     # QTS: said once, when the storage is added, because the first place an
     # operator would otherwise meet it is a refused `qm clone` of a template.

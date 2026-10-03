@@ -2,9 +2,9 @@
 
 Read this before you put data on this storage.
 
-**So far this plugin has been tested on one QNAP NAS.** QuTS hero h6.0 and
-later are not supported yet. Every release in the 0.x series is a
-prerelease and this page is the honest account of where that stands. The related projects in this family
+**So far this plugin has been tested on one QNAP NAS.** On QuTS hero h6.0 and
+later it creates, deletes and attaches disks, and snapshots are not available
+there yet. Every release in the 0.x series is a prerelease and this page is the honest account of where that stands. The related projects in this family
 (`jt-pve-storage-synology`, `-netapp`, `-purestorage`, `-dellemc`) reached
 stability by measuring an array and writing down what it actually did; this one
 is at the start of that process.
@@ -44,13 +44,12 @@ One run, with version 0.6.0, against a NAS on QuTS hero h6.0.1:
 | Creating the storage's iSCSI target, at `pvesm add` | **Refused by the NAS** |
 | Creating a LUN | **Refused by the NAS** |
 
-So QuTS hero h6.0 and later are not supported yet, and from 0.6.1 the plugin
-refuses them when the storage is added. See
-[SUPPORTED-QNAP-OS.md](SUPPORTED-QNAP-OS.md).
+On h6 the NAS takes those two through a different interface, and from 0.6.3
+the plugin uses it there. See [SUPPORTED-QNAP-OS.md](SUPPORTED-QNAP-OS.md) and
+item 18 below.
 
 That run settled none of the items below. No LUN was created, so no device, no
-WWID and no vendor string was seen, and the firmware it ran on is not one this
-plugin supports.
+WWID and no vendor string was seen.
 
 ---
 
@@ -102,8 +101,8 @@ plugin supports.
    but only for calls that carry no secret. **The login is never sent as a
    GET**, so a firmware that only reads the query string cannot be used at all.
    This is the single most likely reason for a first run to fail. On QuTS hero
-   h6.0.1 the login was accepted as a POST. That firmware is not supported yet, so
-   the question is still open for the ones that are.
+   h6.0.1 the login was accepted as a POST. The question is still open for the
+   firmware this plugin was written for.
 
 8. **Concurrency.** `get_return` is keyed by CGI name rather than by job, so a
    clone and a rollback in flight at once cannot be told apart. The plugin
@@ -170,6 +169,22 @@ plugin supports.
     not return it, so the plugin writes it at target creation and again on every
     `pvesm set`, and never on the activation path. If a second node cannot log
     in to a target, run `pvesm set <storeid>` to re-apply it.
+
+### QuTS hero h6
+
+18. **Does the plugin's h6 path work end to end?** On h6 it creates and
+    deletes disks, and creates targets and attaches disks to them, through the
+    interface h6 takes changes through. Each request it sends there was seen to
+    work on h6.0.1, sent by hand, except the one that changes CHAP on an
+    existing target. The plugin itself has not yet sent them. Four things are unmeasured and each is checked by the plugin rather
+    than assumed: whether the LUN listing names a new disk by the label it was
+    created with (refused if not); what the target listing calls a target
+    created this way (the plugin also looks for it by its IQN); whether CHAP
+    written at creation, and later by `pvesm set`, takes effect (read back, and
+    refused if it did not); and what a target answers on when the storage has
+    several data addresses (`qnap-data-portals`), which are sent together,
+    separated by commas. To check: run the first-run steps below on an h6 NAS
+    up to step 4, then free the disk and remove the storage.
 
 ---
 

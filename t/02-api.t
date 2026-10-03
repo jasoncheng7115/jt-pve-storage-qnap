@@ -6,9 +6,11 @@
 
 use strict;
 use warnings;
-use Test::More tests => 54;
+use Test::More tests => 57;
 
 use PVE::Storage::Custom::QNAP::API;
+use HTTP::Response;
+use JSON;
 my $A = 'PVE::Storage::Custom::QNAP::API';
 
 sub parse { return { doc => PVE::Storage::Custom::QNAP::API::_parse_xml($_[0]) } }
@@ -233,54 +235,83 @@ is($api->scheme, 'https',
    'https is the default, because http puts the password on the wire in clear');
 
 # ---------------------------------------------------------------------------
-# Firmware this plugin is known not to work on
+# QuTS hero h6, which is written to through a JSON interface
 # ---------------------------------------------------------------------------
 #
-# Measured on QuTS hero h6.0.1: the listings answer, and the calls that create
-# a target and a LUN are refused. The version is read in both spellings, only
-# QuTS hero is judged, and a version that cannot be read is not refused.
+# The version is read in both spellings, only QuTS hero is judged, and a
+# version that cannot be read is not h6.
 {
     my $fw = sub {
         my ($version, $zfs) = @_;
-        my $api = bless {
+        return bless {
             storeid => 't',
             sysinfo => { firmware => $version, is_zfs => $zfs, storage_v2 => '1' },
         }, $A;
-        return $api;
     };
 
-    is($fw->('h6.0.1', '1')->unsupported_firmware, 'QuTS hero h6.0.1',
-       'QuTS hero h6.0.1 is named as unsupported');
-    is($fw->('6.0.1', '1')->unsupported_firmware, 'QuTS hero h6.0.1',
-       'and so is the same version reported without its h');
-    is($fw->('h6.1.0', '1')->unsupported_firmware, 'QuTS hero h6.1.0',
-       'a later 6.x is refused too');
-    is($fw->('h10.0.0', '1')->unsupported_firmware, 'QuTS hero h10.0.0',
+    is($fw->('h6.0.1', '1')->is_h6, 1, 'QuTS hero h6.0.1 is h6');
+    is($fw->('6.0.1', '1')->is_h6, 1, 'and so is the same version reported without its h');
+    is($fw->('h10.0.0', '1')->is_h6, 1,
        'the major number is compared as a number, not as a string');
-    is($fw->('h5.2.4', '1')->unsupported_firmware, undef,
-       'QuTS hero h5.x is not refused');
-    is($fw->('5.1.0', '1')->unsupported_firmware, undef,
-       'nor is h5.x reported without its h');
-    is($fw->('6.0.1', '0')->unsupported_firmware, undef,
-       'a QTS with the same major number is NOT refused: nothing was measured on one');
-    is($fw->(undef, '1')->unsupported_firmware, undef,
-       'a NAS that did not report its version is not refused on a guess');
-    is($fw->('beta', '1')->unsupported_firmware, undef,
-       'nor is a version that is not a number');
+    is($fw->('h5.2.4', '1')->is_h6, 0, 'QuTS hero h5.x is not');
+    is($fw->('6.0.1', '0')->is_h6, 0,
+       'a QTS with the same major number is not: nothing was measured on one');
+    is($fw->(undef, '1')->is_h6, 0, 'a NAS that did not report its version is not');
+    is($fw->('beta', '1')->is_h6, 0, 'nor is a version that is not a number');
+}
 
-    is($fw->('h5.1.0', '1')->firmware_note, '',
-       'a refused call on supported firmware gets no firmware note');
-    like($fw->('h6.0.1', '1')->firmware_note, qr/\A This NAS runs QuTS hero h6\.0\.1,/,
-         'a refused call on h6 says which firmware the NAS runs');
+# THE REQUEST ITSELF. The session travels in a header, never in the URL, and the
+# body is JSON. A captured request is inspected rather than trusted.
+{
+    my @sent;
+    my $ua = bless {}, 'FakeUA';
+    no warnings qw(redefine once);
+    local *FakeUA::request = sub {
+        my ($self, $req) = @_;
+        push @sent, $req;
+        return HTTP::Response->new(200, 'OK', [ 'Content-Type' => 'application/json' ],
+            '{"single":{"volume_id":7},"error_code":0,"error_message":"Success"}');
+    };
+    my $api = bless {
+        storeid => 't', portals => [ 'nas.example' ], portal_ix => 0,
+        scheme => 'https', port => 443, sid => 'abcd1234', ua => $ua,
+    }, $A;
+    local *PVE::Storage::Custom::QNAP::API::login = sub { 1 };
 
-    # The two forms every write goes through carry the note, so a NAS upgraded
-    # under an existing storage explains its own refusals.
-    no warnings 'redefine';
-    local *PVE::Storage::Custom::QNAP::API::call = sub { return { result => '-1' } };
-    my $e = do { eval { $fw->('h6.0.1', '1')->call_id('x.cgi', _what => 'creating a LUN') }; $@ };
-    like($e, qr/creating a LUN failed: -1 \(.+\)\. This NAS runs QuTS hero h6\.0\.1/,
-         'call_id reports the firmware with the refusal');
-    $e = do { eval { $fw->('h5.1.0', '1')->call_ok('x.cgi', _what => 'creating a LUN') }; $@ };
-    like($e, qr/creating a LUN failed: -1 \([^)]+\)\.\n\z/,
-         'and on supported firmware the message is the refusal alone');
+    my $r = $api->rest_ok('POST', 'api/x/v1/things', { size => 1, on => JSON::true },
+                          _what => 'making a thing');
+    my $req = $sent[0];
+    is($req->method, 'POST', 'the method is the one asked for');
+    is($req->uri->as_string, 'https://nas.example:443/api/x/v1/things',
+       'the URL carries the path and nothing else');
+    unlike($req->uri->as_string, qr/abcd1234/, 'the session is NOT in the URL');
+    is($req->header('sid'), 'abcd1234', 'it is in the sid header');
+    is_deeply(JSON::decode_json($req->content), { size => 1, on => JSON::true },
+              'the body is the JSON that was given');
+    is($r->{single}{volume_id}, 7, 'and the answer is read from single');
+
+    local *FakeUA::request = sub {
+        return HTTP::Response->new(400, 'Bad Request', [],
+            '{"reasons":["type"],"error_code":-100022,"error_message":"Invalid argument"}');
+    };
+    eval { $api->rest_ok('POST', 'api/x/v1/things', {}, _what => 'making a thing') };
+    like($@, qr/making a thing failed: error_code -100022 \(Invalid argument\)\./,
+         'a refusal is reported in the NAS\'s own words, even with a 400 status');
+
+    local *FakeUA::request = sub { return HTTP::Response->new(502, 'Bad Gateway', [], '<html>') };
+    eval { $api->rest_ok('GET', 'api/x/v1/things', undef, _what => 'listing') };
+    like($@, qr/listing failed: 502 Bad Gateway/, 'an answer that is not JSON is a transport failure');
+
+    # A session the NAS no longer knows: one fresh login, one more attempt.
+    my ($n, $logins) = (0, 0);
+    local *FakeUA::request = sub {
+        $n++;
+        return $n == 1 ? HTTP::Response->new(401, 'Unauthorized', [], '')
+                       : HTTP::Response->new(200, 'OK', [], '{"collection":[],"error_code":0}');
+    };
+    local *PVE::Storage::Custom::QNAP::API::login  = sub { $logins++; $_[0]{sid} //= 'efgh5678'; 1 };
+    local *PVE::Storage::Custom::QNAP::API::logout = sub { $_[0]{sid} = undef };
+    $r = $api->rest('GET', 'api/x/v1/things');
+    ok($n == 2 && $logins == 2 && ref $r->{collection} eq 'ARRAY',
+       'a 401 is answered with a fresh login and ONE more attempt');
 }

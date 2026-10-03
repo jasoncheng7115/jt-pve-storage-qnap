@@ -45,6 +45,8 @@ use warnings;
 
 use PVE::Storage::Custom::QNAP::API;
 
+use JSON;
+
 use constant {
     CGI_TARGET => 'disk/iscsi_target_setting.cgi',
     CGI_PORTAL => 'disk/iscsi_portal_setting.cgi',
@@ -58,6 +60,13 @@ use constant {
     # this call takes 0 to activate and -1 to deactivate.
     ACTIVATE   => 0,
     DEACTIVATE => -1,
+
+    # QuTS hero h6: targets are created and removed through the JSON interface.
+    REST_TARGETS => 'api/iscsi/v1/targets',
+
+    # h6 addresses the Default Policy row by its initiator IQN, where the CGI
+    # addressed it by index 0. It is QTS's own fixed name for that row.
+    DEFAULT_POLICY_IQN => 'iqn.2004-04.com.qnap:all:iscsi.default.ffffff',
 };
 
 sub new {
@@ -223,7 +232,9 @@ sub ensure {
     # ONE listing, used for the lookup and for the ceiling count. Two calls
     # would fetch the same data twice on a path that runs for every VM start.
     my $all = $self->list;
-    my $existing = $self->find_by_name($name, listing => $all);
+    my $h6 = $self->api->is_h6;
+    my $existing = $self->find_by_name($name, listing => $all)
+        // ($h6 ? $self->_find_by_iqn($self->_h6_iqn($name), $all) : undef);
 
     if ($existing) {
         # Reactivate a target somebody deactivated. `targetStatus` -1 is
@@ -236,6 +247,8 @@ sub ensure {
 
     $self->assert_room_for_target(count => scalar @$all)
         if !$opt{skip_limit_check};
+
+    return $self->_create_h6($name, %opt) if $h6;
 
     # Note 2: clustered access on, always. Note 4: the answer is the new index.
     my $index = $self->api->call_id(CGI_TARGET,
@@ -265,6 +278,9 @@ sub ensure {
 
 sub activate {
     my ($self, $target) = @_;
+    die "storage '" . $self->_storeid . "': target '" . ($target->{name} // '?')
+      . "' is offline, and this plugin cannot turn a target on on QuTS hero h6"
+      . " yet. Turn it on in iSCSI & Fibre Channel.\n" if $self->api->is_h6;
     return $self->_edit_target($target, targetStatus => ACTIVATE,
         _what => "activating target '" . ($target->{name} // '?') . "'");
 }
@@ -310,6 +326,14 @@ sub _edit_target {
 # activation path.
 sub push_settings {
     my ($self, $target, %opt) = @_;
+
+    # h6: clustered access was set when the target was created, and there is no
+    # measured way to set it again. CHAP is what can change, so CHAP is pushed.
+    if ($self->api->is_h6) {
+        $self->_write_acl($target->{index}, %opt);
+        return 1;
+    }
+
     $self->_edit_target($target,
         _what => "re-applying clustered access to target '"
                . ($target->{name} // '?') . "'");
@@ -346,6 +370,8 @@ sub _write_acl {
     die "storage '" . $self->_storeid . "': mutual CHAP requires one-way CHAP"
       . " as well. Set qnap-chap-username and qnap-chap-password too.\n"
         if $mon && !$on;
+
+    return $self->_write_acl_h6($index, $on, $mon, %opt) if $self->api->is_h6;
 
     my %p = (
         targetIndex        => $index,
@@ -426,8 +452,11 @@ sub reconcile_chap {
 sub delete {
     my ($self, $index) = @_;
 
-    my $r = $self->api->call(CGI_TARGET,
-        func => 'remove_target', targetIndex => $index);
+    my $h6 = $self->api->is_h6;
+    my $r = $h6
+        ? $self->api->rest('DELETE', REST_TARGETS . "/$index")
+        : $self->api->call(CGI_TARGET,
+            func => 'remove_target', targetIndex => $index);
 
     # `remove_target` answers with the target index, so a non-negative result is
     # success — note 4. Absence is confirmed by a listing either way, because a
@@ -437,8 +466,136 @@ sub delete {
 
     die "storage '" . $self->_storeid . "': could not remove iSCSI target"
       . " $index: "
-      . ($r->{transport}
-         // PVE::Storage::Custom::QNAP::API::error_text($r->{result})) . "\n";
+      . ($h6 ? PVE::Storage::Custom::QNAP::API::rest_error_text($r)
+             : ($r->{transport}
+                // PVE::Storage::Custom::QNAP::API::error_text($r->{result})))
+      . "\n";
+}
+
+# ---------------------------------------------------------------------------
+# QuTS hero h6
+# ---------------------------------------------------------------------------
+#
+# On h6 a target is created with its IQN SPELLED OUT by the client, which the
+# CGI never needed (note 1). It is built from the prefix and postfix the portal
+# reports, which is how QTS builds it itself. Because of that, a target on h6
+# is looked for by that IQN as well as by name: what the listing calls a
+# target created this way has not been measured.
+sub _h6_iqn {
+    my ($self, $name) = @_;
+    my $p = $self->api->portal_info;
+    die "storage '" . $self->_storeid . "': the NAS did not report its target"
+      . " IQN prefix and postfix, so the IQN for '$name' cannot be built.\n"
+        if !defined $p->{iqn_prefix} || !length $p->{iqn_prefix}
+        || !defined $p->{iqn_postfix} || !length $p->{iqn_postfix};
+    return $p->{iqn_prefix} . $name . $p->{iqn_postfix};
+}
+
+sub _find_by_iqn {
+    my ($self, $iqn, $all) = @_;
+    my @hit = grep { lc($_->{iqn} // '') eq lc($iqn) } @{ $all // $self->list };
+    return $hit[0];
+}
+
+# The Default Policy row, as h6 takes it. Validation has already happened in
+# `_write_acl`'s caller or in `ensure`'s.
+sub _h6_init_info {
+    my ($self, $on, $mon, %opt) = @_;
+    return {
+        init_iqn              => DEFAULT_POLICY_IQN,
+        global_chap           => 2,
+        chap_enable           => ($on ? JSON::true : JSON::false),
+        chap_user_name        => ($on ? $opt{chap_user} : ''),
+        chap_passwd           => ($on ? $opt{chap_password} : ''),
+        mutual_chap_enable    => ($mon ? JSON::true : JSON::false),
+        mutual_chap_user_name => ($mon ? $opt{mutual_chap_user} : ''),
+        mutual_chap_passwd    => ($mon ? $opt{mutual_chap_password} : ''),
+    };
+}
+
+# The same checks `_write_acl` makes, without writing anything.
+sub _chap_flags {
+    my ($self, %opt) = @_;
+    my $user = $opt{chap_user};
+    my $on   = (defined $user && length $user) ? 1 : 0;
+    die "storage '" . $self->_storeid . "': qnap-chap-username is set but there"
+      . " is no CHAP secret. Set qnap-chap-password, or unset the username: a"
+      . " target with an empty secret accepts anyone while reporting that CHAP"
+      . " is on.\n"
+        if $on && (!defined $opt{chap_password} || !length $opt{chap_password});
+    my $mon = (defined $opt{mutual_chap_user} && length $opt{mutual_chap_user}) ? 1 : 0;
+    die "storage '" . $self->_storeid . "': a mutual CHAP username is set with"
+      . " no secret.\n"
+        if $mon && (!defined $opt{mutual_chap_password} || !length $opt{mutual_chap_password});
+    die "storage '" . $self->_storeid . "': mutual CHAP requires one-way CHAP"
+      . " as well. Set qnap-chap-username and qnap-chap-password too.\n"
+        if $mon && !$on;
+    return ($on, $mon);
+}
+
+# CHAP is the access control this plugin relies on (note 3), and on h6 the way
+# it is written has not been seen to take effect. So what the NAS reports is
+# read back, and a target that does not show the CHAP that was asked for is not
+# handed out.
+sub _assert_chap_h6 {
+    my ($self, $index, $on) = @_;
+    my $info = $self->info($index);
+    my ($acl) = grep { ($_->{index} // '') eq "" . DEFAULT_INITIATOR_INDEX }
+                     @{ ($info // {})->{initiators} // [] };
+    my $have = ($acl && ($acl->{chap} // 0)) ? 1 : 0;
+    return 1 if $have == $on;
+    die "storage '" . $self->_storeid . "': CHAP was " . ($on ? 'set' : 'cleared')
+      . " on target $index, and the NAS reports it " . ($have ? 'on' : 'off')
+      . ". Not using a target whose access control is not what was asked"
+      . " for.\n";
+}
+
+sub _create_h6 {
+    my ($self, $name, %opt) = @_;
+    my ($on, $mon) = $self->_chap_flags(%opt);
+
+    my %body = (
+        target_iqn            => $self->_h6_iqn($name),
+        target_alias          => ($opt{alias} // $name),
+        target_header_digest  => JSON::false,
+        target_data_digest    => JSON::false,
+        # Note 2: clustered access on, always.
+        target_cluster_enable => JSON::true,
+        target_init_info      => [ $self->_h6_init_info($on, $mon, %opt) ],
+    );
+    # The addresses the target answers on: this storage's data portals.
+    my @if = @{ $opt{interfaces} // [] };
+    $body{interfaces} = join(',', @if) if @if;
+
+    my $r = $self->api->rest_ok('POST', REST_TARGETS, \%body,
+        _what => "creating iSCSI target '$name'");
+    my $index = ref $r->{single} eq 'HASH' ? $r->{single}{target_index} : undef;
+    die "storage '" . $self->_storeid . "': the NAS reported creating target"
+      . " '$name' but gave no index for it. Check iSCSI & Fibre Channel before"
+      . " retrying.\n" if !defined $index || $index !~ /\A\d+\z/;
+
+    my $all = $self->list;
+    my $t = $self->find_by_name($name, listing => $all)
+         // $self->_find_by_iqn($body{target_iqn}, $all);
+    die "storage '" . $self->_storeid . "': target '$name' was reported created"
+      . " as index $index but cannot be found in the target list\n" if !$t;
+
+    eval { $self->_assert_chap_h6($t->{index}, $on) };
+    if (my $err = $@) {
+        eval { $self->delete($t->{index}) };
+        die $err;
+    }
+    return $t;
+}
+
+sub _write_acl_h6 {
+    my ($self, $index, $on, $mon, %opt) = @_;
+    $self->api->rest_ok('PUT', REST_TARGETS . "/$index/acls/" . DEFAULT_INITIATOR_INDEX,
+        $self->_h6_init_info($on, $mon, %opt),
+        _what => ($on ? "setting CHAP on target $index"
+                      : "clearing CHAP on target $index"));
+    $self->_assert_chap_h6($index, $on);
+    return 1;
 }
 
 sub find_by_name_index {
