@@ -7,6 +7,39 @@ The register of what has been verified against real hardware, and what has not,
 is [docs/TESTING.md](docs/TESTING.md). It is more useful than this file for
 deciding whether to trust a given release.
 
+## [0.6.4] - 2026-11-27
+
+### Changed
+
+- **Proxmox VE 9.3.** The plugin now implements storage API 17, so 9.3 no
+  longer prints "implementing an older storage API" for it on every load. On
+  earlier versions it declares what that version supports, as before.
+- **Disk export announces the size of the device it reads**, not the capacity
+  the NAS reports. Proxmox VE 9.3's own importers refuse a stream whose length
+  differs from its header, so a disk moved from this storage to an LVM or RBD
+  storage on 9.3 would have failed had the two ever differed.
+- **Disk import refuses a stream that is shorter or longer than its header**,
+  on 9.2 as well. A short stream used to leave the end of the new disk holding
+  whatever the LUN held before.
+- **`pvesm add` refuses a node without a working open-iscsi before it creates
+  anything on the NAS.** Proxmox VE 9.3 activates a new storage only after
+  writing its configuration, and undoes the add if that fails; the check now
+  comes first.
+- **Disk export refuses a device smaller than its LUN.** A disk grown on the
+  NAS that this node's device has not caught up with used to export without
+  its end.
+- 12 unit tests added, 288 in total. The unit tests and the simulator ran on
+  Proxmox VE 9.2 and on 9.3.
+
+### Documentation
+
+- **Proxmox VE 9.3's Node > SAN view can wipe this plugin's disks.** It cannot
+  tell that a disk of a third-party plugin is in use, and can list a stopped
+  guest's disk as unused. The READMEs and the site say not to wipe a LUN there
+  without looking it up on the NAS first.
+- [docs/TESTING.md](docs/TESTING.md) item 19: a disk move to and from another
+  storage on 9.3.
+
 ## [0.6.3] - 2026-10-03
 
 ### Added

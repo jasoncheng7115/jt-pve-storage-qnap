@@ -31,7 +31,7 @@ QTS · QuTS hero · 共用儲存 · 線上遷移 · 快照 / 倒回 · 複製 ·
 2. QNAP LUN 回報的 SCSI vendor 字串是什麼？
 3. `authLogin.cgi` 是否接受 POST？這個 plugin 的每一個呼叫都是 POST。
 
-[docs/TESTING_zh-TW.md](docs/TESTING_zh-TW.md) 依照應該處理的順序列出全部十八項待驗證事項，並附上第一次上機的指令。
+[docs/TESTING_zh-TW.md](docs/TESTING_zh-TW.md) 依照應該處理的順序列出全部十九項待驗證事項，並附上第一次上機的指令。
 
 0.x 全部都是預覽版本。有實測結果可以取代這段警語時，才會把它拿掉。
 
@@ -108,6 +108,14 @@ now 12884901888 bytes rather than the 11811160064 requested.
 | 每個節點 | `open-iscsi`、`multipath-tools` |
 
 如果韌體回報的是舊版 Storage Manager，而不是 Storage Manager V2，plugin 會在 `pvesm add` 時**直接拒絕**，並在訊息中寫出韌體版本。不會先新增成功，之後才列不出任何東西。
+
+### Proxmox VE 9.3：不要在「節點 > SAN」抹除這些磁碟
+
+Proxmox VE 9.3 在每個節點新增了 SAN 檢視，列出節點看得到的 SAN LUN，並可以**抹除**（Wipe）其中一個，或在上面**建立 Volume Group**。不要對這個 plugin 的磁碟做這兩件事，兩者都會毀掉 NAS 上的 guest 磁碟。
+
+這個檢視依據 Proxmox VE 自己的 storage 判斷 LUN 是否使用中，沒有辦法詢問第三方 plugin，所以這個 plugin 的磁碟只有在同一個節點上有行程開啟它時才算使用中。停機中 guest 的磁碟、範本，以及從其他節點看到的執行中 guest 磁碟，都可能列為 `unused`，而 Proxmox VE 允許抹除它們。plugin 沒有辦法告訴這個檢視，Proxmox VE 也沒有提供讓 plugin 宣告的方法。
+
+在那個檢視裡動任何 LUN 之前，先到 NAS 上查。這個 plugin 建立的 LUN 名稱都是 `pve-<storeid>-…`。
 
 ## LUN 數量上限
 

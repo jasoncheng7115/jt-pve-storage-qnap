@@ -1,3 +1,16 @@
+jt-pve-storage-qnap (0.6.4-1) unstable; urgency=medium
+
+  * Changed: implements storage API 17 (Proxmox VE 9.3).
+  * Changed: disk export announces the size of the device it reads; import
+    refuses a stream shorter or longer than its header.
+  * Changed: pvesm add refuses a node without a working open-iscsi before it
+    creates anything on the NAS.
+  * Documented: Proxmox VE 9.3's Node > SAN view can wipe this plugin's disks.
+  * Changed: disk export refuses a device smaller than its LUN.
+  * 12 unit tests added, 288 in total.
+
+ -- Jason Cheng (Jason Tools) <jason@jason.tools>  Fri, 27 Nov 2026 00:21:52 +0800
+
 jt-pve-storage-qnap (0.6.3-1) unstable; urgency=medium
 
   * Added: QuTS hero h6.0 and later. Adding a storage with CHAP, and creating,

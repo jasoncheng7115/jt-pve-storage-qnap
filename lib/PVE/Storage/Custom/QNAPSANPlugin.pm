@@ -39,6 +39,7 @@ package PVE::Storage::Custom::QNAPSANPlugin;
 use strict;
 use warnings;
 
+use Fcntl qw(SEEK_END);
 use PVE::Tools qw(run_command);
 use PVE::INotify;
 use PVE::Storage::Plugin;
@@ -72,8 +73,25 @@ my $LUNMOD = 'PVE::Storage::Custom::QNAP::LUN';
 # in range only produces a warning on every load of PVE::Storage. PVE 9 raised
 # APIVER twice inside its 9.1 point releases, so a fixed number is wrong
 # somewhere by construction.
+#
+# Raise APIVERSION_MAX only after reading pve-storage's ApiChangeLog for each
+# version in between and checking this file against it. Done up to 17:
+#
+#   14  get_identity(). Implemented.
+#   15  volume_resize() gained $snapname: refused here, there is no
+#       snapshot-as-volume-chain. volume_snapshot_info() gained virtual-size,
+#       which only the volume-chain path reads.
+#   16  volname_for_format() and friends. Called only from the BASE
+#       alloc_image() and rename_volume(); both are overridden without SUPER.
+#   17  the guest vtypes vm-vol, vm-state, ct-vol. parse_volname() keeps
+#       answering `images`, which PVE accepts wherever a guest volume type is
+#       expected, and nothing here compares a vtype with `images`. The new
+#       content types are not offered, and `isolate-properties` is not set
+#       (PVE before 17 refuses it; every property here is `qnap-` prefixed).
+#
+# An earlier note here had 14 and 15 the wrong way round.
 use constant APIVERSION_MIN => 10;
-use constant APIVERSION_MAX => 15;   # get_identity. Raise only after implementing the delta.
+use constant APIVERSION_MAX => 17;
 
 sub api {
     my $ver = eval { PVE::Storage::APIVER() };
@@ -717,6 +735,19 @@ sub on_add_hook {
         }
     }
 
+    # What activate_storage would refuse on, asked BEFORE anything is created
+    # on the NAS. Proxmox VE 9.3 writes the section first and activates it
+    # afterwards, outside the config lock; a failed activation then removes the
+    # section and calls on_delete_hook, by which time the other nodes may have
+    # seen the storage. Refusing here keeps that path for failures nobody
+    # could have predicted. Only when this node is one the storage is for:
+    # PVE does not activate it anywhere else.
+    my $node = PVE::INotify::nodename();
+    die "storage '$storeid': open-iscsi is not usable on this node (iscsiadm"
+      . " did not answer)\n"
+        if (!$scfg->{nodes} || $scfg->{nodes}{$node})
+        && !PVE::Storage::Custom::QNAP::ISCSI::is_available();
+
     my $api = $class->_api($storeid, $scfg, creds => \%creds);
     PVE::Storage::Custom::QNAP::Health::assert_usable($api,
         pool_id => $class->_pool($scfg));
@@ -796,6 +827,12 @@ sub _existing_volumes_warning {
 # The target belongs to the STORAGE, not to any one disk, so it is removed when
 # the storage is — not by free_image, which would tear it out from under every
 # other disk on the same storage.
+#
+# Proxmox VE 9.3 also calls this when a storage it has just added fails to
+# activate, after removing the section again. Other nodes may have activated
+# it in that moment; activate_storage logs nothing in, so no node holds a
+# session to the target yet, and a target that already carries a LUN is left
+# alone below whatever the reason for the call.
 sub on_delete_hook {
     my ($class, $storeid, $scfg) = @_;
 
@@ -1129,7 +1166,21 @@ sub volume_export {
         if defined $snapshot || defined $base_snapshot;
 
     my $path = $class->path($scfg, $volname, $storeid);
-    my $size = $class->volume_size_info($scfg, $storeid, $volname);
+
+    # The header announces what dd below will actually send, so it is the
+    # DEVICE's size, not the capacity the NAS reports. Proxmox VE 9.3's own
+    # importers refuse a stream whose length differs from its header, and two
+    # numbers from two sources are only probably equal.
+    my $size = _device_bytes($path);
+
+    # And it must not be SMALLER than the LUN: a disk grown on the NAS that
+    # this node's device has not caught up with would export without its end,
+    # consistently and silently.
+    my $lun_size = $class->volume_size_info($scfg, $storeid, $volname);
+    die "storage '$storeid': '$volname' is $lun_size bytes on the NAS but only"
+      . " $size bytes on this node ($path). Refusing to export a disk without"
+      . " its end: rescan the device, or deactivate and activate it again.\n"
+        if $size < $lun_size;
 
     PVE::Storage::Plugin::write_common_header($fh, $size);
     run_command([ 'dd', "if=$path", 'bs=4k', 'status=none' ],
@@ -1159,8 +1210,7 @@ sub volume_import {
     my $ok = eval {
         $class->activate_volume($storeid, $scfg, $name);
         my $path = $class->path($scfg, $name, $storeid);
-        run_command([ 'dd', "of=$path", 'bs=4k', 'conv=fsync', 'status=none' ],
-            input => '<&' . fileno($fh));
+        _import_stream($fh, $path, $size);
         1;
     };
     if (!$ok) {
@@ -1173,6 +1223,40 @@ sub volume_import {
     }
 
     return "$storeid:$name";
+}
+
+# The size of a block device in bytes, read by seeking to its end. No command
+# and no stat: the device is the one dd is about to read anyway.
+sub _device_bytes {
+    my ($path) = @_;
+    open(my $d, '<', $path) or die "cannot open '$path': $!\n";
+    my $n = sysseek($d, 0, SEEK_END);
+    close($d);
+    die "cannot read the size of '$path': $!\n" if !$n;
+    return $n + 0;
+}
+
+# Writes a raw+size stream into $path and refuses one that is not as long as
+# its header said: a short stream leaves the end of the disk holding whatever
+# the LUN held before, and nothing else would notice. The same check Proxmox VE
+# 9.3 makes in its own importers, made here for 9.2 as well.
+sub _import_stream {
+    my ($fh, $path, $size) = @_;
+    my $copied;
+    {
+        local $ENV{LC_ALL} = 'C';   # dd's summary line is parsed
+        run_command([ 'dd', "of=$path", 'bs=4k', 'conv=fsync' ],
+            input   => '<&' . fileno($fh),
+            errfunc => sub {
+                $copied = $1 if $_[0] =~ /^(\d+) bytes?\b.*\bcopied\b/;
+            });
+    }
+    die "the amount of imported data could not be checked (dd printed no"
+      . " summary)\n" if !defined $copied;
+    die "the stream ended after $copied of $size bytes\n" if $copied < $size;
+    die "the stream has $copied bytes, but its header announced $size\n"
+        if $copied > $size;
+    return;
 }
 
 # Refused rather than left to a base implementation that would reach for a

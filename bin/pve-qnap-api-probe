@@ -33,7 +33,7 @@ use PVE::Storage::Custom::QNAP::ISCSI;
 # missing subroutine rather than about a missing tool.
 use PVE::Storage::Custom::QNAP::Command;
 
-my $VERSION = '0.6.3';
+my $VERSION = '0.6.4';
 
 my %opt = (port => 443, scheme => 'https');
 my $show_version;

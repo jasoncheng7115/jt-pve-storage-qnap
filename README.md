@@ -42,7 +42,7 @@ a bug to fix:
 2. What does a QNAP LUN report as its SCSI vendor string?
 3. Does `authLogin.cgi` accept a POST? Every call this plugin makes is one.
 
-[docs/TESTING.md](docs/TESTING.md) lists all eighteen open items in the order
+[docs/TESTING.md](docs/TESTING.md) lists all nineteen open items in the order
 they should be settled, with the commands for a first run.
 
 Every 0.x release is a prerelease. This notice comes down when there is a
@@ -150,6 +150,22 @@ deciding factor.
 The plugin **refuses** a firmware that reports the legacy Storage Manager
 instead of Storage Manager V2, at `pvesm add`, with the version in the message.
 It does not add cleanly and then list nothing.
+
+### Proxmox VE 9.3: do not wipe these disks in Node > SAN
+
+Proxmox VE 9.3 added a SAN view on each node. It lists the SAN LUNs the node
+sees and can **wipe** one or **create a volume group** on it. Do not do either
+to a disk of this plugin: both destroy the guest disk on the NAS.
+
+The view decides whether a LUN is in use from Proxmox VE's own storages. It has
+no way to ask a third-party plugin, so a disk of this plugin counts as in use
+only while a process on that same node has it open. The disk of a stopped
+guest, a template, and a running guest's disk seen from another node can all be
+listed as `unused`, and Proxmox VE lets them be wiped. This plugin cannot tell
+the view otherwise; Proxmox VE has no way for a plugin to say so.
+
+Before acting on a LUN in that view, look it up on the NAS. Every LUN this
+plugin creates is named `pve-<storeid>-…`.
 
 ## The LUN ceiling
 

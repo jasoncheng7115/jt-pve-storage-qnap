@@ -186,6 +186,18 @@ WWID and no vendor string was seen.
     separated by commas. To check: run the first-run steps below on an h6 NAS
     up to step 4, then free the disk and remove the storage.
 
+### Proxmox VE 9.3
+
+19. **Does a disk move between this storage and another one work on 9.3?**
+    9.3's own importers refuse a stream whose length differs from the size
+    its header announces. The plugin's export announces the size of the
+    device it reads, and its import refuses a stream that is shorter or
+    longer than announced, on 9.2 as well. The unit tests and the simulator
+    ran on 9.3; no NAS has. To check: on a 9.3 node, move
+    a disk from this storage to an LVM storage and back
+    (`qm disk move <vmid> scsi0 <storage>`), and start the guest after each
+    move.
+
 ---
 
 ## The first run, in order

@@ -138,7 +138,7 @@ function pickLang() {
         <!-- The version sits on this line, immediately after the class, because
              <code>make release-check</code> reads it from here to prove the site has not
              drifted from the package. Do not reflow it. -->
-        <div class="hero__badge">v0.6.3 <span class="hero__badge-sep"></span> MIT <span class="hero__badge-sep"></span> <span class="lang-en">PRERELEASE</span><span class="lang-zh">預覽版</span></div>
+        <div class="hero__badge">v0.6.4 <span class="hero__badge-sep"></span> MIT <span class="hero__badge-sep"></span> <span class="lang-en">PRERELEASE</span><span class="lang-zh">預覽版</span></div>
         <h1 class="hero__title">jt-pve-storage-qnap</h1>
         <p class="hero__subtitle">
             <span class="lang-en">Proxmox VE uses a QNAP NAS over iSCSI directly as its VM storage back end.</span>
@@ -610,6 +610,12 @@ pve-qnap-reap --all --remove    # act</code></pre>
 
 <section class="doc-section" id="trouble">
     <h2 class="section-title"><span class="lang-en">When something goes wrong</span><span class="lang-zh">故障處理</span></h2>
+
+    <h3 class="subsection-title"><span class="lang-en">Proxmox VE 9.3: Node &gt; SAN lists these disks as unused</span><span class="lang-zh">Proxmox VE 9.3：「節點 &gt; SAN」把這些磁碟列為未使用</span></h3>
+    <p>
+        <span class="lang-en">Proxmox VE 9.3's SAN view can <strong>wipe</strong> a LUN or <strong>create a volume group</strong> on it. Do not do either to a disk of this plugin: both destroy the guest disk on the NAS. The view knows only Proxmox VE's own storages, so a disk of this plugin counts as in use only while a process on that same node has it open. A stopped guest's disk, a template, and a running guest's disk seen from another node can all be listed as <code>unused</code>. Before acting on a LUN there, look it up on the NAS: every LUN this plugin creates is named <code>pve-&lt;storeid&gt;-…</code>.</span>
+        <span class="lang-zh">Proxmox VE 9.3 的 SAN 檢視可以<strong>抹除</strong>（Wipe）LUN，或在上面<strong>建立 Volume Group</strong>。不要對這個 plugin 的磁碟做這兩件事，兩者都會毀掉 NAS 上的 guest 磁碟。這個檢視只認得 Proxmox VE 自己的 storage，所以這個 plugin 的磁碟只有在同一個節點上有行程開啟它時才算使用中。停機中 guest 的磁碟、範本，以及從其他節點看到的執行中 guest 磁碟，都可能列為 <code>unused</code>。在那裡動任何 LUN 之前，先到 NAS 上查：這個 plugin 建立的 LUN 名稱都是 <code>pve-&lt;storeid&gt;-…</code>。</span>
+    </p>
 
     <h3 class="subsection-title"><span class="lang-en">The storage will not add</span><span class="lang-zh">storage 無法新增</span></h3>
     <ul>

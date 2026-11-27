@@ -14,7 +14,7 @@ BEGIN {
         or plan skip_all => 'Proxmox VE is not installed on this machine';
 }
 
-plan tests => 70;
+plan tests => 82;
 
 use PVE::Storage;
 use PVE::Storage::Custom::QNAPSANPlugin;
@@ -330,4 +330,73 @@ is($P->_existing_volumes_warning('qnap1', undef), undef,
     ok($@ eq $outcome && -e $f,
        'one the NAS has not finished KEEPS its claim: the NAS is still working');
     unlink $f;
+}
+
+# ---------------------------------------------------------------------------
+# Proxmox VE 9.3: API 17, strict raw+size streams, activation after the write
+# ---------------------------------------------------------------------------
+is($P->APIVERSION_MAX, 17, 'the API is implemented up to 17');
+
+# The export header is the size of what dd sends, read from the device itself.
+{
+    my $tmp = File::Temp->new;
+    print $tmp "\0" x 12345;
+    close $tmp;
+    is(PVE::Storage::Custom::QNAPSANPlugin::_device_bytes("$tmp"), 12345,
+       'the export header is the size of what is read, not what the NAS reports');
+    eval { PVE::Storage::Custom::QNAPSANPlugin::_device_bytes('/nonexistent/qnap') };
+    like($@, qr/cannot open/, 'and a device that cannot be opened is refused');
+}
+
+# An import that is not as long as its header is refused.
+{
+    my $dir = File::Temp::tempdir(CLEANUP => 1);
+    my $src = "$dir/src";
+    open(my $w, '>', $src) or die; print $w 'x' x 8192; close $w;
+    my $import = sub {
+        my ($size) = @_;
+        open(my $r, '<', $src) or die;
+        eval { PVE::Storage::Custom::QNAPSANPlugin::_import_stream($r, "$dir/dst", $size) };
+        close $r;
+        return $@;
+    };
+    is($import->(8192), '', 'a stream as long as its header is imported');
+    is(-s "$dir/dst", 8192, 'all of it');
+    like($import->(10000), qr/ended after 8192 of 10000 bytes/, 'a short one is refused');
+    like($import->(4096), qr/has 8192 bytes, but its header announced 4096/,
+         'and so is a long one');
+}
+
+# on_add_hook refuses a node without open-iscsi before it creates anything on
+# the NAS, because PVE 9.3 activates only after the section is written.
+{
+    no warnings 'redefine';
+    my $created = 0;
+    local *PVE::Storage::Custom::QNAP::ISCSI::is_available = sub { 0 };
+    local *PVE::Storage::Custom::QNAPSANPlugin::_api = sub { $created++; die "no NAS here\n" };
+    local *PVE::Storage::config = sub { { ids => {} } };
+    my $node = PVE::INotify::nodename();
+    eval { $P->on_add_hook('qnap1', { 'qnap-portal' => 'nas' }, 'qnap-password' => 'x') };
+    like($@, qr/open-iscsi is not usable/, 'a node without open-iscsi is refused at add');
+    is($created, 0, 'before the NAS is asked anything');
+    eval { $P->on_add_hook('qnap1', { 'qnap-portal' => 'nas', nodes => { 'elsewhere' => 1 } },
+                           'qnap-password' => 'x') };
+    like($@, qr/no NAS here/, 'unless the storage is not for this node: PVE does not activate it here');
+}
+
+# An export from a device smaller than its LUN is refused: a disk grown on the
+# NAS that this node has not caught up with would lose its end.
+{
+    no warnings 'redefine';
+    my $tmp = File::Temp->new; print $tmp "\0" x 4096; close $tmp;
+    my $lun_size = 8192;
+    local *PVE::Storage::Custom::QNAPSANPlugin::path = sub { "$tmp" };
+    local *PVE::Storage::Custom::QNAPSANPlugin::volume_size_info = sub { $lun_size };
+    open(my $out, '>', '/dev/null') or die;
+    eval { $P->volume_export({}, 's', $out, 'vm-1-disk-0', 'raw+size') };
+    like($@, qr/8192 bytes on the NAS but only 4096 bytes on this node/,
+         'an export from a device smaller than its LUN is refused');
+    $lun_size = 4096;
+    eval { $P->volume_export({}, 's', $out, 'vm-1-disk-0', 'raw+size') };
+    is($@, '', 'and one from a device as large as its LUN goes through');
 }
